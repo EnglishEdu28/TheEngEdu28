@@ -23,11 +23,10 @@ DB_NAME = os.environ.get("DB_NAME", "users.db")
 MAX_ATTEMPTS = 3
 LOCK_SECONDS = 5 * 60  # 5 minutes
 
-# Admin (for normal /login + uploading)
+# Admin credentials (set env vars on Render)
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")  # change this on Render!
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")  # change on Render!
 
-# Password reset tokens
 RESET_TOKEN_EXPIRE_SECONDS = 15 * 60  # 15 minutes
 
 # Email (optional)
@@ -67,11 +66,11 @@ def sha256_hex(s: str) -> str:
 
 
 def init_db():
-    """Create tables + auto-create admin user if not exists."""
+    """Create tables + auto-create admin user in users table if missing."""
     with db() as conn:
         cur = conn.cursor()
 
-        # USERS table
+        # USERS
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,7 +82,7 @@ def init_db():
             )
         """)
 
-        # PASSWORD RESETS table
+        # PASSWORD RESETS
         cur.execute("""
             CREATE TABLE IF NOT EXISTS password_resets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,7 +95,7 @@ def init_db():
             )
         """)
 
-        # FILES table (shared library)
+        # FILES (shared library)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,8 +107,8 @@ def init_db():
             )
         """)
 
-        # Ensure admin user exists (for /login and uploads)
-        cur.execute("SELECT id FROM users WHERE username = ?", (ADMIN_USERNAME,))
+        # Ensure admin user exists for normal /login uploads
+        cur.execute("SELECT id FROM users WHERE username=?", (ADMIN_USERNAME,))
         exists = cur.fetchone()
         if not exists:
             cur.execute("""
@@ -121,7 +120,7 @@ def init_db():
 
 
 # -----------------------------
-# SECURITY + USER HELPERS
+# USER / SECURITY HELPERS
 # -----------------------------
 def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -138,18 +137,19 @@ def require_login():
 
 
 def require_admin():
+    # Admin can be set either by logging in as admin user OR via /admin/login
     if not session.get("is_admin"):
         abort(403)
 
 
 def get_user(username: str):
     with db() as conn:
-        return conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        return conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
 
 
 def get_user_by_id(user_id: int):
     with db() as conn:
-        return conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
 
 
 def create_user(username: str, email: str, password: str) -> bool:
@@ -168,7 +168,7 @@ def create_user(username: str, email: str, password: str) -> bool:
 def update_attempts_and_lock(user_id: int, attempts_left: int, lock_until: int):
     with db() as conn:
         conn.execute(
-            "UPDATE users SET attempts_left = ?, lock_until = ? WHERE id = ?",
+            "UPDATE users SET attempts_left=?, lock_until=? WHERE id=?",
             (attempts_left, lock_until, user_id)
         )
         conn.commit()
@@ -181,7 +181,7 @@ def reset_user_security(user_id: int):
 def set_user_password(user_id: int, new_password: str):
     with db() as conn:
         conn.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
+            "UPDATE users SET password_hash=? WHERE id=?",
             (generate_password_hash(new_password), user_id)
         )
         conn.commit()
@@ -216,7 +216,7 @@ def create_password_reset(user_id: int) -> str:
     expires_at = now + RESET_TOKEN_EXPIRE_SECONDS
 
     with db() as conn:
-        conn.execute("UPDATE password_resets SET used = 1 WHERE user_id = ?", (user_id,))
+        conn.execute("UPDATE password_resets SET used=1 WHERE user_id=?", (user_id,))
         conn.execute("""
             INSERT INTO password_resets (user_id, token_hash, expires_at, used, created_at)
             VALUES (?, ?, ?, 0, ?)
@@ -232,19 +232,19 @@ def find_valid_reset(token: str):
     with db() as conn:
         return conn.execute("""
             SELECT * FROM password_resets
-            WHERE token_hash = ? AND used = 0 AND expires_at > ?
+            WHERE token_hash=? AND used=0 AND expires_at>?
             ORDER BY id DESC LIMIT 1
         """, (token_hash, now)).fetchone()
 
 
 def mark_reset_used(reset_id: int):
     with db() as conn:
-        conn.execute("UPDATE password_resets SET used = 1 WHERE id = ?", (reset_id,))
+        conn.execute("UPDATE password_resets SET used=1 WHERE id=?", (reset_id,))
         conn.commit()
 
 
 # -----------------------------
-# ROUTES
+# ROUTES (PUBLIC)
 # -----------------------------
 @app.route("/")
 def home():
@@ -258,7 +258,6 @@ def register():
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "")
 
-        # Reserve admin username (so students can't take it)
         if username.lower() == ADMIN_USERNAME.lower():
             return render_template("register.html", error="This username is reserved. Choose another.")
 
@@ -290,12 +289,10 @@ def login():
 
         now = int(time.time())
 
-        # Locked?
         if user["lock_until"] > now:
             remaining = user["lock_until"] - now
             return render_template("login.html", locked=True, remaining_seconds=remaining)
 
-        # Correct password?
         if check_password_hash(user["password_hash"], password):
             reset_user_security(user["id"])
             session["user_id"] = user["id"]
@@ -303,7 +300,6 @@ def login():
             session["is_admin"] = (user["username"].lower() == ADMIN_USERNAME.lower())
             return redirect(url_for("dashboard"))
 
-        # Wrong password -> reduce attempts
         attempts_left = user["attempts_left"] - 1
         if attempts_left <= 0:
             update_attempts_and_lock(user["id"], 0, now + LOCK_SECONDS)
@@ -355,7 +351,7 @@ def logout():
 
 
 # -----------------------------
-# FILES (Shared library)
+# FILES (shared library)
 # Admin uploads only, students download only
 # -----------------------------
 @app.route("/files")
@@ -374,6 +370,7 @@ def upload():
     redir = require_login()
     if redir:
         return redir
+
     if not session.get("is_admin"):
         abort(403)
 
@@ -434,6 +431,7 @@ def delete(file_id):
     redir = require_login()
     if redir:
         return redir
+
     if not session.get("is_admin"):
         abort(403)
 
@@ -441,7 +439,6 @@ def delete(file_id):
         row = conn.execute("SELECT * FROM files WHERE id=?", (file_id,)).fetchone()
         if not row:
             abort(404)
-
         conn.execute("DELETE FROM files WHERE id=?", (file_id,))
         conn.commit()
 
@@ -454,8 +451,95 @@ def delete(file_id):
 
 
 # -----------------------------
-# OPTIONAL: Forgot / Reset routes
-# (Only if your templates exist: forgot.html, reset.html)
+# ADMIN PANEL (manage users)
+# -----------------------------
+def get_all_users():
+    with db() as conn:
+        return conn.execute(
+            "SELECT id, username, email, attempts_left, lock_until FROM users ORDER BY id DESC"
+        ).fetchall()
+
+
+def delete_user_by_id(user_id: int):
+    with db() as conn:
+        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        conn.commit()
+
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    """
+    Admin-only login for the admin panel.
+    Uses ADMIN_USERNAME + ADMIN_PASSWORD env vars.
+    """
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            session["is_admin"] = True
+            session["admin_username"] = username
+            return redirect(url_for("admin_panel"))
+
+        return render_template("admin_login.html", error="Invalid admin credentials ❌")
+
+    return render_template("admin_login.html")
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("admin_username", None)
+    # don't clear whole session, only remove admin panel auth
+    # if admin is also logged-in as user, keep user session
+    if session.get("username", "").lower() != ADMIN_USERNAME.lower():
+        session.pop("is_admin", None)
+    return redirect(url_for("admin_login"))
+
+
+@app.route("/admin")
+def admin_panel():
+    require_admin()
+    users = get_all_users()
+    now = int(time.time())
+
+    users_view = []
+    for u in users:
+        remaining = (u["lock_until"] - now) if (u["lock_until"] and u["lock_until"] > now) else 0
+        users_view.append({
+            "id": u["id"],
+            "username": u["username"],
+            "email": u["email"],
+            "attempts_left": u["attempts_left"],
+            "lock_until": u["lock_until"],
+            "remaining": remaining
+        })
+
+    return render_template("admin.html", users=users_view, admin=session.get("admin_username", ADMIN_USERNAME))
+
+
+@app.route("/admin/reset/<int:user_id>", methods=["POST"])
+def admin_reset_user(user_id):
+    require_admin()
+    reset_user_security(user_id)
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/delete/<int:user_id>", methods=["POST"])
+def admin_delete_user(user_id):
+    require_admin()
+
+    # Don't allow deleting the admin account via panel
+    user = get_user_by_id(user_id)
+    if user and user["username"].lower() == ADMIN_USERNAME.lower():
+        flash("You can't delete the admin account.", "error")
+        return redirect(url_for("admin_panel"))
+
+    delete_user_by_id(user_id)
+    return redirect(url_for("admin_panel"))
+
+
+# -----------------------------
+# OPTIONAL: Forgot/Reset routes
 # -----------------------------
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot_password():
@@ -499,5 +583,5 @@ def reset_password(token):
     return render_template("reset.html", invalid=False)
 
 
-# Initialize DB when app starts (important for Render)
+# Initialize DB on startup (needed for Render)
 init_db()
