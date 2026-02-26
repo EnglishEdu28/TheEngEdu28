@@ -16,26 +16,19 @@
         {% if session.get("is_admin") %}👑{% else %}🎓{% endif %}
       </div>
       <h1>Welcome, {{ username }}</h1>
-      <p>
-        {% if session.get("is_admin") %}
-          Administrator Dashboard (Upload enabled)
-        {% else %}
-          Student Dashboard (Download only)
-        {% endif %}
-      </p>
+      <p>{% if session.get("is_admin") %}Administrator{% else %}Student{% endif %} Dashboard</p>
     </header>
 
     <div style="display:grid; gap:14px; margin-top:18px;">
-      <a href="{{ url_for('files') }}" class="btn">
-        Course Materials <span class="btn-arrow">→</span>
-      </a>
+      <a href="{{ url_for('files') }}" class="btn">Course Materials <span class="btn-arrow">→</span></a>
+      <a href="{{ url_for('profile') }}" class="btn" style="filter: brightness(0.95);">My Profile <span class="btn-arrow">→</span></a>
 
-      <a href="{{ url_for('profile') }}" class="btn" style="filter: brightness(0.95);">
-        My Profile <span class="btn-arrow">→</span>
-      </a>
+      {% if session.get("is_admin") %}
+        <a href="{{ url_for('admin_panel') }}" class="btn" style="filter: brightness(0.92);">Admin Panel <span class="btn-arrow">→</span></a>
+      {% endif %}
     </div>
 
-    <div style="margin-top: 18px; text-align:center;">
+    <div style="margin-top:18px; text-align:center;">
       <a href="{{ url_for('logout') }}" class="link">Logout</a>
     </div>
 
