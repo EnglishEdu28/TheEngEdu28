@@ -1,46 +1,118 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Profile</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <style>
-    .row { display:flex; justify-content:space-between; gap:12px; margin-top:10px; }
-    .pill { padding:6px 10px; border-radius:999px; background: rgba(255,255,255,0.08); }
-    .muted { opacity:0.9; font-size:0.95em; }
-    .btnlink { display:inline-block; margin-top:12px; }
-  </style>
 </head>
 <body>
+  <main class="page">
+    <section class="auth-card" style="max-width: 920px;">
+      <header class="auth-header">
+        <div class="logo-badge">👤</div>
+        <h1>Profile</h1>
+        <p>Your account details and security status</p>
+      </header>
 
-<div class="card">
-  <h2>Profile 👤</h2>
+      <div class="profile-top">
+        <div class="profile-user">
+          <div class="avatar" aria-hidden="true">
+            {{ (username[:1] if username else "U")|upper }}
+          </div>
+          <div>
+            <div class="profile-name">
+              {{ username }}
+              {% if is_admin %}
+                <span class="badge badge-admin">Admin</span>
+              {% else %}
+                <span class="badge">User</span>
+              {% endif %}
+            </div>
+            <div class="profile-meta">
+              Signed in • Manage your security & materials access
+            </div>
+          </div>
+        </div>
 
-  <p class="muted">Welcome, <b>{{ username }}</b> ✅</p>
+        <div class="status-card">
+          {% if locked %}
+            <div class="status-title">Status</div>
+            <div class="status-pill status-danger">Locked 🔒</div>
+            <div class="status-sub">Try again in <b>{{ remaining }}</b> seconds</div>
+          {% else %}
+            <div class="status-title">Status</div>
+            <div class="status-pill status-ok">Active ✅</div>
+            <div class="status-sub">Attempts left: <b>{{ attempts_left }}</b></div>
+          {% endif %}
+        </div>
+      </div>
 
-  <div class="row">
-    <span class="pill">Attempts left: <b>{{ attempts_left }}</b></span>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-title">Security</div>
+          <div class="panel-body">
+            <div class="kv">
+              <span class="k">Login attempts left</span>
+              <span class="v">{{ attempts_left }}</span>
+            </div>
+            <div class="kv">
+              <span class="k">Account lock</span>
+              <span class="v">
+                {% if locked %}
+                  Enabled ({{ remaining }}s)
+                {% else %}
+                  Not locked
+                {% endif %}
+              </span>
+            </div>
+            <div class="kv">
+              <span class="k">Password reset</span>
+              <span class="v">Available</span>
+            </div>
 
-    {% if locked %}
-      <span class="pill">Status: <b>Locked ({{ remaining }}s)</b> 🔒</span>
-    {% else %}
-      <span class="pill">Status: <b>Active</b> ✅</span>
-    {% endif %}
-  </div>
+            <div class="hint" style="margin-top: 10px;">
+              Tip: use a strong password and don’t share your login.
+            </div>
+          </div>
+        </div>
 
-  <p class="btnlink">
-    <a href="{{ url_for('dashboard') }}">Go to Dashboard</a>
-  </p>
+        <div class="panel">
+          <div class="panel-title">Quick actions</div>
+          <div class="panel-body">
+            <div class="actions-row">
+              <a class="btn-outline" href="{{ url_for('dashboard') }}">Dashboard</a>
+              <a class="btn-outline" href="{{ url_for('files') }}">Course Files</a>
+              {% if is_admin %}
+                <a class="btn-outline" href="{{ url_for('admin_panel') }}">Admin Panel</a>
+              {% endif %}
+              <a class="btn-outline btn-outline-danger" href="{{ url_for('logout') }}">Logout</a>
+            </div>
 
-  {% if is_admin %}
-    <p class="btnlink">
-      <a href="{{ url_for('admin_panel') }}">Go to Admin Panel</a>
-    </p>
-  {% endif %}
+            {% if is_admin %}
+              <div class="alert" style="margin-top: 14px;">
+                <strong>Admin access</strong>
+                <span>You can upload course materials and manage users from the Admin Panel.</span>
+              </div>
+            {% else %}
+              <div class="alert" style="margin-top: 14px;">
+                <strong>Student access</strong>
+                <span>You can download course materials from the Course Files page.</span>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
 
-  <p class="btnlink">
-    <a href="{{ url_for('logout') }}">Logout</a>
-  </p>
-</div>
+      <div class="row" style="margin-top:18px;">
+        <a class="link" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+        <a class="link" href="{{ url_for('logout') }}">Logout</a>
+      </div>
+    </section>
 
+    <div class="bg-orb orb-1" aria-hidden="true"></div>
+    <div class="bg-orb orb-2" aria-hidden="true"></div>
+    <div class="bg-grid" aria-hidden="true"></div>
+  </main>
 </body>
 </html>
