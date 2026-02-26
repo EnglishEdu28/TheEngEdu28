@@ -1,6 +1,6 @@
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    session, abort, flash, send_from_directory
+    session, abort, flash, send_from_directory, jsonify
 )
 import sqlite3
 import time
@@ -12,6 +12,14 @@ from email.message import EmailMessage
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
+# --- Cloudinary (external storage for Render free plan) ---
+import cloudinary
+import cloudinary.uploader
+
+
+# -----------------------------
+# APP CONFIG
+# -----------------------------
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change_this_to_any_random_string")
 
@@ -31,6 +39,7 @@ MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "")
 MAIL_APP_PASSWORD = os.environ.get("MAIL_APP_PASSWORD", "")
 MAIL_FROM = os.environ.get("MAIL_FROM", MAIL_USERNAME)
 
+# Local uploads folder (kept only as fallback for old records; Cloudinary is the real storage)
 UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "uploads")
 MAX_FILE_SIZE = 20 * 1024 * 1024
 ALLOWED_EXTENSIONS = {
@@ -44,7 +53,13 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
 
+# Cloudinary reads CLOUDINARY_URL from Render Environment automatically
+cloudinary.config(secure=True)
 
+
+# -----------------------------
+# DB HELPERS
+# -----------------------------
 def db():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
@@ -82,6 +97,7 @@ def init_db():
             )
         """)
 
+        # Files table now supports Cloudinary
         cur.execute("""
             CREATE TABLE IF NOT EXISTS files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,11 +105,23 @@ def init_db():
                 original_name TEXT NOT NULL,
                 stored_name TEXT NOT NULL,
                 size INTEGER NOT NULL,
-                uploaded_at INTEGER NOT NULL
+                uploaded_at INTEGER NOT NULL,
+                cloud_public_id TEXT,
+                cloud_url TEXT
             )
         """)
 
-        # Create admin user in USERS table if missing (for /login + uploads)
+        # If you already had an old DB without these columns, add them safely:
+        try:
+            cur.execute("ALTER TABLE files ADD COLUMN cloud_public_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cur.execute("ALTER TABLE files ADD COLUMN cloud_url TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        # Create admin user if missing
         cur.execute("SELECT id FROM users WHERE username=?", (ADMIN_USERNAME,))
         if not cur.fetchone():
             cur.execute("""
@@ -104,6 +132,9 @@ def init_db():
         conn.commit()
 
 
+# -----------------------------
+# AUTH + UTILITIES
+# -----------------------------
 def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -168,6 +199,9 @@ def set_user_password(user_id: int, new_password: str):
         conn.commit()
 
 
+# -----------------------------
+# EMAIL RESET
+# -----------------------------
 def send_reset_email(to_email: str, reset_link: str):
     if not MAIL_USERNAME or not MAIL_APP_PASSWORD or not MAIL_FROM:
         raise RuntimeError("Email not configured.")
@@ -221,6 +255,9 @@ def mark_reset_used(reset_id: int):
         conn.commit()
 
 
+# -----------------------------
+# ROUTES
+# -----------------------------
 @app.route("/")
 def home():
     return redirect(url_for("login"))
@@ -334,6 +371,9 @@ def files():
     return render_template("files.html", files=rows)
 
 
+# -----------------------------
+# FILE UPLOAD (Cloudinary)
+# -----------------------------
 @app.route("/upload", methods=["POST"])
 def upload():
     redir = require_login()
@@ -358,20 +398,39 @@ def upload():
 
     original = secure_filename(f.filename)
     ext = original.rsplit(".", 1)[1].lower()
-    stored = f"admin_{int(time.time())}_{os.urandom(6).hex()}.{ext}"
 
-    save_path = os.path.join(app.config["UPLOAD_FOLDER"], stored)
-    f.save(save_path)
-    size = os.path.getsize(save_path)
+    public_id = f"uploads/{session['username']}_{int(time.time())}_{secrets.token_hex(8)}"
+
+    try:
+        result = cloudinary.uploader.upload(
+            f,
+            resource_type="raw",   # IMPORTANT: PDFs/docs/zip etc.
+            public_id=public_id,
+            overwrite=False
+        )
+    except Exception as e:
+        flash(f"Cloud upload failed: {e}", "error")
+        return redirect(url_for("files"))
+
+    url = result.get("secure_url")
+    size = int(result.get("bytes") or 0)
 
     with db() as conn:
         conn.execute("""
-            INSERT INTO files (username, original_name, stored_name, size, uploaded_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, (session["username"], original, stored, size, int(time.time())))
+            INSERT INTO files (username, original_name, stored_name, size, uploaded_at, cloud_public_id, cloud_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            session["username"],
+            original,
+            public_id,                 # stored_name kept for compatibility
+            size,
+            int(time.time()),
+            public_id,
+            url
+        ))
         conn.commit()
 
-    flash("Uploaded successfully ✅", "success")
+    flash("Uploaded successfully ✅ (saved on Cloudinary)", "success")
     return redirect(url_for("files"))
 
 
@@ -387,6 +446,11 @@ def download(file_id):
     if not row:
         abort(404)
 
+    # Cloudinary file: redirect to permanent URL
+    if row["cloud_url"]:
+        return redirect(row["cloud_url"])
+
+    # Fallback for old local files (if any)
     return send_from_directory(
         app.config["UPLOAD_FOLDER"],
         row["stored_name"],
@@ -408,18 +472,30 @@ def delete(file_id):
         row = conn.execute("SELECT * FROM files WHERE id=?", (file_id,)).fetchone()
         if not row:
             abort(404)
+
         conn.execute("DELETE FROM files WHERE id=?", (file_id,))
         conn.commit()
 
-    path = os.path.join(app.config["UPLOAD_FOLDER"], row["stored_name"])
-    if os.path.exists(path):
-        os.remove(path)
+    # Delete from Cloudinary if present
+    public_id = row["cloud_public_id"] or row["stored_name"]
+    if row["cloud_url"] and public_id:
+        try:
+            cloudinary.uploader.destroy(public_id, resource_type="raw")
+        except Exception:
+            pass
+
+    # Fallback: delete local file if it exists
+    local_path = os.path.join(app.config["UPLOAD_FOLDER"], row["stored_name"])
+    if os.path.exists(local_path):
+        os.remove(local_path)
 
     flash("Deleted ✅", "success")
     return redirect(url_for("files"))
 
 
-# ---- Admin panel routes (this fixes your dashboard error) ----
+# -----------------------------
+# ADMIN PANEL
+# -----------------------------
 def get_all_users():
     with db() as conn:
         return conn.execute(
@@ -498,7 +574,9 @@ def admin_delete_user(user_id):
     return redirect(url_for("admin_panel"))
 
 
-# Optional reset pages (only if you already have forgot.html / reset.html)
+# -----------------------------
+# OPTIONAL RESET PAGES
+# -----------------------------
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot_password():
     if request.method == "POST":
