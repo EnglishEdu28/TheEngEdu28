@@ -1,4 +1,5 @@
 Flask
 Werkzeug
-cloudinary
 gunicorn
+cloudinary
+psycopg[binary]
