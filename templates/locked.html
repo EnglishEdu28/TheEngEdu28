@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Locked</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="card">
+    <h2>Account Locked 🔒</h2>
+
+    {% if remaining and remaining > 0 %}
+        <p>Try again in {{ remaining }} seconds.</p>
+    {% else %}
+        <p>Lock expired. Refresh.</p>
+    {% endif %}
+
+</div>
+
+</body>
+</html>

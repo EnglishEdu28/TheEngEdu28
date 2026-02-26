@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Admin Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="card">
+  <h2>Admin Login 🛡️</h2>
+
+  <form method="POST">
+    <input name="username" placeholder="Admin username" required>
+    <input type="password" name="password" placeholder="Admin password" required>
+    <button type="submit">Login</button>
+  </form>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  <p style="margin-top:12px;">
+    <a href="{{ url_for('login') }}">Back to user login</a>
+  </p>
+</div>
+
+</body>
+</html>

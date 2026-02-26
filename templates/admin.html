@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Admin Panel</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    /* quick table styling (keeps your main CSS unchanged) */
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    th, td { padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.15); text-align: left; }
+    .small { font-size: 0.9em; opacity: 0.9; }
+    .btn { width: auto; padding: 8px 10px; margin: 0; }
+    .danger { background: #dc2626; }
+    .danger:hover { background: #b91c1c; }
+  </style>
+</head>
+<body>
+
+<div class="card" style="width: 720px; max-width: 92vw; text-align:left;">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <div>
+      <h2 style="margin:0;">Admin Panel 🛠️</h2>
+      <div class="small">Logged in as: <b>{{ admin }}</b></div>
+    </div>
+    <div>
+      <a href="{{ url_for('admin_logout') }}">Logout</a>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Username</th>
+        <th>Attempts Left</th>
+        <th>Lock Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.id }}</td>
+        <td>{{ u.username }}</td>
+        <td>{{ u.attempts_left }}</td>
+        <td>
+          {% if u.remaining > 0 %}
+            Locked ({{ u.remaining }}s)
+          {% else %}
+            Not locked
+          {% endif %}
+        </td>
+        <td style="display:flex; gap:8px; flex-wrap:wrap;">
+          <form method="POST" action="{{ url_for('admin_reset_user', user_id=u.id) }}">
+            <button class="btn" type="submit">Reset lock</button>
+          </form>
+
+          <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}"
+                onsubmit="return confirm('Delete user {{ u.username }}?');">
+            <button class="btn danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="small" style="margin-top:12px;">
+    Admin URL: <b>/admin</b> • Admin login: <b>/admin/login</b>
+  </p>
+</div>
+
+</body>
+</html>

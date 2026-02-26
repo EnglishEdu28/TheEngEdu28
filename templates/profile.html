@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Profile</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .row { display:flex; justify-content:space-between; gap:12px; margin-top:10px; }
+    .pill { padding:6px 10px; border-radius:999px; background: rgba(255,255,255,0.08); }
+    .muted { opacity:0.9; font-size:0.95em; }
+    .btnlink { display:inline-block; margin-top:12px; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>Profile 👤</h2>
+
+  <p class="muted">Welcome, <b>{{ username }}</b> ✅</p>
+
+  <div class="row">
+    <span class="pill">Attempts left: <b>{{ attempts_left }}</b></span>
+
+    {% if locked %}
+      <span class="pill">Status: <b>Locked ({{ remaining }}s)</b> 🔒</span>
+    {% else %}
+      <span class="pill">Status: <b>Active</b> ✅</span>
+    {% endif %}
+  </div>
+
+  <p class="btnlink">
+    <a href="{{ url_for('dashboard') }}">Go to Dashboard</a>
+  </p>
+
+  {% if is_admin %}
+    <p class="btnlink">
+      <a href="{{ url_for('admin_panel') }}">Go to Admin Panel</a>
+    </p>
+  {% endif %}
+
+  <p class="btnlink">
+    <a href="{{ url_for('logout') }}">Logout</a>
+  </p>
+</div>
+
+</body>
+</html>

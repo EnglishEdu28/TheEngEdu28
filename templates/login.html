@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <main class="page">
+    <section class="auth-card" aria-label="Login form">
+      <header class="auth-header">
+        <div class="logo-badge" aria-hidden="true">🔒</div>
+        <h1>Welcome back</h1>
+        <p>Login to continue</p>
+      </header>
+
+      {# Flash / error message area (optional) #}
+      {% if error %}
+        <div class="alert alert-error" role="alert">
+          {{ error }}
+        </div>
+      {% endif %}
+
+      {% if locked %}
+        <div class="alert alert-warn" role="alert">
+          <strong>Account Locked</strong>
+          <span>Try again in <b id="countdown">{{ remaining_seconds }}</b> seconds.</span>
+        </div>
+
+        <script>
+          let seconds = Number("{{ remaining_seconds }}");
+          const el = document.getElementById("countdown");
+          const timer = setInterval(() => {
+            seconds -= 1;
+            el.textContent = seconds;
+            if (seconds <= 0) {
+              clearInterval(timer);
+              window.location.reload();
+            }
+          }, 1000);
+        </script>
+      {% endif %}
+
+      <form class="auth-form" method="POST" action="{{ url_for('login') }}" autocomplete="on">
+        <div class="field">
+          <label for="username">Username</label>
+          <div class="input-wrap">
+            <span class="input-icon" aria-hidden="true">👤</span>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              placeholder="Enter your username"
+              required
+              {% if locked %}disabled{% endif %}
+              autofocus
+            />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <div class="input-wrap">
+            <span class="input-icon" aria-hidden="true">🔑</span>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              placeholder="Enter your password"
+              required
+              {% if locked %}disabled{% endif %}
+            />
+            <button class="icon-btn" type="button" aria-label="Show password" id="togglePw" {% if locked %}disabled{% endif %}>
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <div class="row">
+          <label class="check">
+            <input type="checkbox" name="remember" {% if locked %}disabled{% endif %}>
+            <span>Remember me</span>
+          </label>
+
+          <a class="link" href="{{ url_for('forgot_password') }}">Forgot password?</a>
+        </div>
+
+        <button class="btn" type="submit" {% if locked %}disabled{% endif %}>
+          Login
+          <span class="btn-arrow" aria-hidden="true">→</span>
+        </button>
+
+        <p class="muted">
+          New here?
+          <a class="link" href="{{ url_for('register') }}">Create an account</a>
+        </p>
+      </form>
+
+      <footer class="auth-footer">
+        <span class="tiny">Tip: use a strong password 🔐</span>
+      </footer>
+    </section>
+
+    <div class="bg-orb orb-1" aria-hidden="true"></div>
+    <div class="bg-orb orb-2" aria-hidden="true"></div>
+    <div class="bg-grid" aria-hidden="true"></div>
+  </main>
+
+  <script>
+    // Password show/hide
+    const toggle = document.getElementById("togglePw");
+    const pw = document.getElementById("password");
+    if (toggle && pw) {
+      toggle.addEventListener("click", () => {
+        const isPw = pw.type === "password";
+        pw.type = isPw ? "text" : "password";
+        toggle.textContent = isPw ? "🙈" : "👁️";
+      });
+    }
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Course Files</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="page">
+    <section class="auth-card" style="max-width: 920px;">
+      <header class="auth-header">
+        <div class="logo-badge">📚</div>
+        <h1>Course Materials</h1>
+        <p>Students download • Admin uploads</p>
+      </header>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for cat, msg in messages %}
+            <div class="alert {% if cat == 'error' %}alert-error{% endif %}">{{ msg }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      {% if session.get("is_admin") %}
+        <form class="auth-form" method="POST" action="{{ url_for('upload') }}" enctype="multipart/form-data">
+          <div class="field">
+            <label>Select file (Admin only)</label>
+            <div class="input-wrap" style="grid-template-columns: 1fr;">
+              <input type="file" name="file" required />
+            </div>
+            <p class="hint">Allowed: pdf, docx, pptx, xlsx, images, zip… (max 20MB)</p>
+          </div>
+
+          <button class="btn" type="submit">Upload <span class="btn-arrow">→</span></button>
+        </form>
+
+        <hr style="border:none; border-top:1px solid rgba(255,255,255,0.10); margin:18px 0;">
+      {% else %}
+        <div class="alert" role="status">
+          <strong>Students</strong>
+          <span>You can only download files. Only admin uploads materials.</span>
+        </div>
+      {% endif %}
+
+      <div style="overflow:auto;">
+        <table style="width:100%; border-collapse: collapse;">
+          <thead>
+            <tr style="text-align:left; color: rgba(234,240,255,0.75); font-size: 0.9rem;">
+              <th style="padding:10px;">File</th>
+              <th style="padding:10px;">Size</th>
+              <th style="padding:10px;">Uploaded by</th>
+              <th style="padding:10px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in files %}
+              <tr style="border-top: 1px solid rgba(255,255,255,0.08);">
+                <td style="padding:10px;">{{ f.original_name }}</td>
+                <td style="padding:10px;">{{ (f.size / 1024)|round(1) }} KB</td>
+                <td style="padding:10px;">{{ f.username }}</td>
+                <td style="padding:10px; display:flex; gap:10px; flex-wrap:wrap;">
+                  <a class="link" href="{{ url_for('download', file_id=f.id) }}">Download</a>
+
+                  {% if session.get("is_admin") %}
+                    <form method="POST" action="{{ url_for('delete', file_id=f.id) }}"
+                          onsubmit="return confirm('Delete this file?');">
+                      <button class="icon-btn" type="submit">🗑️ Delete</button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td style="padding:10px;" colspan="4">No files uploaded yet.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="row" style="margin-top:14px;">
+        <a class="link" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+        <a class="link" href="{{ url_for('logout') }}">Logout</a>
+      </div>
+    </section>
+
+    <div class="bg-orb orb-1" aria-hidden="true"></div>
+    <div class="bg-orb orb-2" aria-hidden="true"></div>
+    <div class="bg-grid" aria-hidden="true"></div>
+  </main>
+</body>
+</html>

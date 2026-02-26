@@ -1,0 +1,282 @@
+/* ====== Base ====== */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+  color: #eaf0ff;
+  background: radial-gradient(1200px 800px at 20% 10%, #13234a 0%, transparent 60%),
+              radial-gradient(900px 700px at 85% 30%, #1b3f75 0%, transparent 55%),
+              radial-gradient(900px 700px at 50% 90%, #101a33 0%, #070b18 55%, #050715 100%);
+  overflow-x: hidden;
+}
+
+.page {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 32px 16px;
+  position: relative;
+}
+
+/* ====== Background decorations ====== */
+.bg-orb {
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  filter: blur(40px);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.orb-1 {
+  top: -120px;
+  left: -120px;
+  background: radial-gradient(circle at 30% 30%, #5aa7ff, transparent 60%);
+}
+
+.orb-2 {
+  bottom: -140px;
+  right: -140px;
+  background: radial-gradient(circle at 30% 30%, #7c5cff, transparent 60%);
+}
+
+.bg-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(circle at center, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.1) 70%, transparent 100%);
+  pointer-events: none;
+  opacity: 0.25;
+}
+
+/* ====== Card ====== */
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 26px 24px;
+  border-radius: 18px;
+  background: rgba(10, 14, 28, 0.62);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow:
+    0 18px 60px rgba(0,0,0,0.55),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+  backdrop-filter: blur(14px);
+  position: relative;
+  z-index: 1;
+}
+
+.auth-header { text-align: center; margin-bottom: 18px; }
+.logo-badge {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 12px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+
+.auth-header h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: 0.2px;
+}
+
+.auth-header p {
+  margin: 6px 0 0;
+  color: rgba(234,240,255,0.72);
+  font-size: 0.95rem;
+}
+
+/* ====== Alerts ====== */
+.alert {
+  margin: 12px 0 16px;
+  padding: 12px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
+  font-size: 0.95rem;
+  line-height: 1.25rem;
+}
+.alert strong { display: block; margin-bottom: 4px; }
+
+.alert-error {
+  border-color: rgba(255, 85, 85, 0.35);
+  background: rgba(255, 85, 85, 0.10);
+}
+
+.alert-warn {
+  border-color: rgba(255, 200, 70, 0.35);
+  background: rgba(255, 200, 70, 0.10);
+}
+
+/* ====== Form ====== */
+.auth-form { display: grid; gap: 14px; }
+
+.field label {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+  color: rgba(234,240,255,0.80);
+}
+
+.input-wrap {
+  display: grid;
+  grid-template-columns: 36px 1fr 42px;
+  align-items: center;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  overflow: hidden;
+}
+
+.input-icon {
+  display: grid;
+  place-items: center;
+  opacity: 0.9;
+}
+
+.input-wrap input {
+  width: 100%;
+  padding: 12px 10px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #eaf0ff;
+  font-size: 0.98rem;
+}
+
+.input-wrap input::placeholder {
+  color: rgba(234,240,255,0.45);
+}
+
+.input-wrap:focus-within {
+  border-color: rgba(90, 167, 255, 0.65);
+  box-shadow: 0 0 0 3px rgba(90, 167, 255, 0.20);
+}
+
+.icon-btn {
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: rgba(234,240,255,0.85);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.icon-btn:hover { background: rgba(255,255,255,0.06); }
+.icon-btn:disabled, input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Row controls */
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.check {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.9rem;
+  color: rgba(234,240,255,0.75);
+}
+.check input { accent-color: #5aa7ff; }
+
+/* Buttons & links */
+.btn {
+  margin-top: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1rem;
+  color: #061126;
+  background: linear-gradient(90deg, #5aa7ff 0%, #7c5cff 100%);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.35);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
+.btn:active { transform: translateY(0px); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.btn-arrow { font-weight: 900; }
+
+.link {
+  color: rgba(180, 210, 255, 0.95);
+  text-decoration: none;
+}
+.link:hover { text-decoration: underline; }
+
+.muted {
+  text-align: center;
+  margin: 4px 0 0;
+  color: rgba(234,240,255,0.65);
+  font-size: 0.92rem;
+}
+
+.auth-footer {
+  margin-top: 14px;
+  text-align: center;
+}
+
+.tiny {
+  color: rgba(234,240,255,0.55);
+  font-size: 0.82rem;
+}
+
+/* Small screens */
+@media (max-width: 380px) {
+  .auth-card { padding: 22px 16px; }
+  .row { flex-direction: column; align-items: flex-start; }
+}
+
+/* ====== Register extras ====== */
+.hint {
+  margin: 6px 2px 0;
+  font-size: 0.85rem;
+  color: rgba(234,240,255,0.55);
+}
+
+.soft {
+  color: rgba(180, 210, 255, 0.95);
+}
+
+.strength {
+  margin-top: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  overflow: hidden;
+}
+
+.strength-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: rgba(90, 167, 255, 0.85); /* default */
+  transition: width 200ms ease;
+}
+
+/* No hard colors needed, but small variation helps the UX */
+.strength-bar[data-level="weak"] { background: rgba(255, 120, 120, 0.85); }
+.strength-bar[data-level="mid"] { background: rgba(255, 210, 90, 0.85); }
+.strength-bar[data-level="strong"] { background: rgba(120, 255, 170, 0.85); }

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<main class="page">
+
+  <section class="auth-card" style="max-width: 900px;">
+
+    <header class="auth-header">
+      <div class="logo-badge">
+        {% if session.get("is_admin") %}
+          👑
+        {% else %}
+          🎓
+        {% endif %}
+      </div>
+
+      <h1>Welcome, {{ username }}</h1>
+
+      {% if session.get("is_admin") %}
+        <p style="color: #7c5cff;">Administrator Access</p>
+      {% else %}
+        <p>Student Dashboard</p>
+      {% endif %}
+    </header>
+
+    <div style="display: grid; gap: 16px; margin-top: 20px;">
+
+      <!-- Course Files -->
+      <a href="{{ url_for('files') }}" class="dashboard-card">
+        <div class="card-icon">📚</div>
+        <div>
+          <h3>Course Materials</h3>
+          <p>
+            {% if session.get("is_admin") %}
+              Upload and manage shared files
+            {% else %}
+              Download available course files
+            {% endif %}
+          </p>
+        </div>
+        <span class="card-arrow">→</span>
+      </a>
+
+      <!-- Profile -->
+      <a href="{{ url_for('profile') }}" class="dashboard-card">
+        <div class="card-icon">👤</div>
+        <div>
+          <h3>My Profile</h3>
+          <p>View your account details</p>
+        </div>
+        <span class="card-arrow">→</span>
+      </a>
+
+      {% if session.get("is_admin") %}
+      <!-- Admin Panel -->
+      <a href="{{ url_for('admin_panel') }}" class="dashboard-card">
+        <div class="card-icon">⚙️</div>
+        <div>
+          <h3>Admin Panel</h3>
+          <p>Manage users and account security</p>
+        </div>
+        <span class="card-arrow">→</span>
+      </a>
+      {% endif %}
+
+    </div>
+
+    <div style="margin-top: 30px; text-align: center;">
+      <a href="{{ url_for('logout') }}" class="btn" style="max-width: 200px;">
+        Logout
+      </a>
+    </div>
+
+  </section>
+
+  <div class="bg-orb orb-1"></div>
+  <div class="bg-orb orb-2"></div>
+  <div class="bg-grid"></div>
+
+</main>
+
+<style>
+/* Dashboard Cards */
+.dashboard-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  text-decoration: none;
+  color: #eaf0ff;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(90,167,255,0.6);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+}
+
+.card-icon {
+  font-size: 28px;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  background: rgba(255,255,255,0.08);
+  border-radius: 12px;
+}
+
+.dashboard-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.dashboard-card p {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+  color: rgba(234,240,255,0.65);
+}
+
+.card-arrow {
+  margin-left: auto;
+  font-weight: bold;
+  font-size: 18px;
+  opacity: 0.6;
+}
+</style>
+
+</body>
+</html>

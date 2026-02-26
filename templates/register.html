@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Register</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <main class="page">
+    <section class="auth-card" aria-label="Register form">
+      <header class="auth-header">
+        <div class="logo-badge" aria-hidden="true">✨</div>
+        <h1>Create account</h1>
+        <p>Join in less than a minute</p>
+      </header>
+
+      {% if error %}
+        <div class="alert alert-error" role="alert">{{ error }}</div>
+      {% endif %}
+      {% if message %}
+        <div class="alert" role="status">{{ message }}</div>
+      {% endif %}
+
+      <form class="auth-form" method="POST" action="{{ url_for('register') }}" autocomplete="on">
+        <div class="field">
+          <label for="username">Username</label>
+          <div class="input-wrap">
+            <span class="input-icon" aria-hidden="true">👤</span>
+            <input id="username" name="username" type="text" placeholder="e.g. Abdul Ghaffar" required autofocus>
+            <span></span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="email">Email (Gmail)</label>
+          <div class="input-wrap">
+            <span class="input-icon" aria-hidden="true">📧</span>
+            <input id="email" name="email" type="email" placeholder="e.g. yourname@gmail.com" required>
+            <span></span>
+          </div>
+          <p class="hint">Use a real email  you may need it for password resets.</p>
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <div class="input-wrap">
+            <span class="input-icon" aria-hidden="true">🔑</span>
+            <input id="password" name="password" type="password" placeholder="Create a strong password" required>
+            <button class="icon-btn" type="button" aria-label="Show password" id="togglePw">👁️</button>
+          </div>
+
+          <div class="strength" aria-hidden="true">
+            <div class="strength-bar" id="strengthBar"></div>
+          </div>
+          <p class="hint" id="strengthText">Use at least 8 characters, a number, and a symbol.</p>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" required>
+          <span>I agree to the <span class="soft">Terms</span> and <span class="soft">Privacy</span>.</span>
+        </label>
+
+        <button class="btn" type="submit">
+          Create account
+          <span class="btn-arrow" aria-hidden="true">→</span>
+        </button>
+
+        <p class="muted">
+          Already have an account?
+          <a class="link" href="{{ url_for('login') }}">Login</a>
+        </p>
+      </form>
+
+      <footer class="auth-footer">
+        <span class="tiny">We never share your email.</span>
+      </footer>
+    </section>
+
+    <div class="bg-orb orb-1" aria-hidden="true"></div>
+    <div class="bg-orb orb-2" aria-hidden="true"></div>
+    <div class="bg-grid" aria-hidden="true"></div>
+  </main>
+
+  <script>
+    // Show/hide password
+    const toggle = document.getElementById("togglePw");
+    const pw = document.getElementById("password");
+    if (toggle && pw) {
+      toggle.addEventListener("click", () => {
+        const isPw = pw.type === "password";
+        pw.type = isPw ? "text" : "password";
+        toggle.textContent = isPw ? "🙈" : "👁️";
+      });
+    }
+
+    // Simple password strength meter (client-side UX only)
+    const bar = document.getElementById("strengthBar");
+    const text = document.getElementById("strengthText");
+
+    function scorePassword(p) {
+      let score = 0;
+      if (!p) return 0;
+      if (p.length >= 8) score += 25;
+      if (p.length >= 12) score += 15;
+      if (/[A-Z]/.test(p)) score += 15;
+      if (/[0-9]/.test(p)) score += 15;
+      if (/[^A-Za-z0-9]/.test(p)) score += 20;
+      if (p.length >= 16) score += 10;
+      return Math.min(score, 100);
+    }
+
+    function labelForScore(s) {
+      if (s < 35) return "Weak — add length, numbers & symbols.";
+      if (s < 70) return "Medium — good, but can be stronger.";
+      return "Strong — nice ✅";
+    }
+
+    if (pw && bar && text) {
+      const update = () => {
+        const s = scorePassword(pw.value);
+        bar.style.width = s + "%";
+        text.textContent = labelForScore(s);
+        bar.dataset.level = s < 35 ? "weak" : (s < 70 ? "mid" : "strong");
+      };
+      pw.addEventListener("input", update);
+      update();
+    }
+  </script>
+
+</body>
+</html>
