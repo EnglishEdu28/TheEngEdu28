@@ -18,17 +18,20 @@
       <div class="profile-top">
         <div class="profile-user">
           <div class="avatar" aria-hidden="true">
-            {{ (username[:1] if username else "U")|upper }}
+            {{ (username|default("U", true))[0]|upper }}
           </div>
+
           <div>
             <div class="profile-name">
-              {{ username }}
+              {{ username|default("User", true) }}
+
               {% if is_admin %}
                 <span class="badge badge-admin">Admin</span>
               {% else %}
                 <span class="badge">User</span>
               {% endif %}
             </div>
+
             <div class="profile-meta">
               Signed in • Manage your security & materials access
             </div>
@@ -36,14 +39,14 @@
         </div>
 
         <div class="status-card">
+          <div class="status-title">Status</div>
+
           {% if locked %}
-            <div class="status-title">Status</div>
             <div class="status-pill status-danger">Locked 🔒</div>
-            <div class="status-sub">Try again in <b>{{ remaining }}</b> seconds</div>
+            <div class="status-sub">Try again in <b>{{ remaining|default(0, true) }}</b> seconds</div>
           {% else %}
-            <div class="status-title">Status</div>
             <div class="status-pill status-ok">Active ✅</div>
-            <div class="status-sub">Attempts left: <b>{{ attempts_left }}</b></div>
+            <div class="status-sub">Attempts left: <b>{{ attempts_left|default(0, true) }}</b></div>
           {% endif %}
         </div>
       </div>
@@ -54,13 +57,13 @@
           <div class="panel-body">
             <div class="kv">
               <span class="k">Login attempts left</span>
-              <span class="v">{{ attempts_left }}</span>
+              <span class="v">{{ attempts_left|default(0, true) }}</span>
             </div>
             <div class="kv">
               <span class="k">Account lock</span>
               <span class="v">
                 {% if locked %}
-                  Enabled ({{ remaining }}s)
+                  Enabled ({{ remaining|default(0, true) }}s)
                 {% else %}
                   Not locked
                 {% endif %}
