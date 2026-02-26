@@ -12,49 +12,39 @@ from email.message import EmailMessage
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
-# -----------------------------
-# APP CONFIG
-# -----------------------------
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change_this_to_any_random_string")
 
 DB_NAME = os.environ.get("DB_NAME", "users.db")
 
 MAX_ATTEMPTS = 3
-LOCK_SECONDS = 5 * 60  # 5 minutes
+LOCK_SECONDS = 5 * 60
 
-# Admin credentials (set env vars on Render)
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")  # change on Render!
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")  # set on Render
 
-RESET_TOKEN_EXPIRE_SECONDS = 15 * 60  # 15 minutes
+RESET_TOKEN_EXPIRE_SECONDS = 15 * 60
 
-# Email (optional)
 MAIL_HOST = os.environ.get("MAIL_HOST", "smtp.gmail.com")
 MAIL_PORT = int(os.environ.get("MAIL_PORT", "465"))
 MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "")
 MAIL_APP_PASSWORD = os.environ.get("MAIL_APP_PASSWORD", "")
 MAIL_FROM = os.environ.get("MAIL_FROM", MAIL_USERNAME)
 
-# -----------------------------
-# FILE STORAGE
-# -----------------------------
-UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "uploads")  # Render free: ephemeral
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "uploads")
+MAX_FILE_SIZE = 20 * 1024 * 1024
 ALLOWED_EXTENSIONS = {
     "pdf", "doc", "docx", "txt",
     "png", "jpg", "jpeg", "gif",
     "zip", "rar", "ppt", "pptx",
     "xls", "xlsx"
 }
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
 
 
-# -----------------------------
-# DB HELPERS
-# -----------------------------
 def db():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
@@ -66,11 +56,9 @@ def sha256_hex(s: str) -> str:
 
 
 def init_db():
-    """Create tables + auto-create admin user in users table if missing."""
     with db() as conn:
         cur = conn.cursor()
 
-        # USERS
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,7 +70,6 @@ def init_db():
             )
         """)
 
-        # PASSWORD RESETS
         cur.execute("""
             CREATE TABLE IF NOT EXISTS password_resets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,7 +82,6 @@ def init_db():
             )
         """)
 
-        # FILES (shared library)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,10 +93,9 @@ def init_db():
             )
         """)
 
-        # Ensure admin user exists for normal /login uploads
+        # Create admin user in USERS table if missing (for /login + uploads)
         cur.execute("SELECT id FROM users WHERE username=?", (ADMIN_USERNAME,))
-        exists = cur.fetchone()
-        if not exists:
+        if not cur.fetchone():
             cur.execute("""
                 INSERT INTO users (username, email, password_hash, attempts_left, lock_until)
                 VALUES (?, ?, ?, ?, ?)
@@ -119,9 +104,6 @@ def init_db():
         conn.commit()
 
 
-# -----------------------------
-# USER / SECURITY HELPERS
-# -----------------------------
 def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -137,7 +119,6 @@ def require_login():
 
 
 def require_admin():
-    # Admin can be set either by logging in as admin user OR via /admin/login
     if not session.get("is_admin"):
         abort(403)
 
@@ -187,12 +168,9 @@ def set_user_password(user_id: int, new_password: str):
         conn.commit()
 
 
-# -----------------------------
-# PASSWORD RESET (optional)
-# -----------------------------
 def send_reset_email(to_email: str, reset_link: str):
     if not MAIL_USERNAME or not MAIL_APP_PASSWORD or not MAIL_FROM:
-        raise RuntimeError("Email not configured. Set MAIL_USERNAME and MAIL_APP_PASSWORD on Render.")
+        raise RuntimeError("Email not configured.")
 
     msg = EmailMessage()
     msg["Subject"] = "Password Reset Link"
@@ -243,9 +221,6 @@ def mark_reset_used(reset_id: int):
         conn.commit()
 
 
-# -----------------------------
-# ROUTES (PUBLIC)
-# -----------------------------
 @app.route("/")
 def home():
     return redirect(url_for("login"))
@@ -268,8 +243,7 @@ def register():
         if len(password) < 4:
             return render_template("register.html", error="Password must be at least 4 characters.")
 
-        ok = create_user(username, email, password)
-        if not ok:
+        if not create_user(username, email, password):
             return render_template("register.html", error="Username already exists. Try another.")
 
         return redirect(url_for("login"))
@@ -288,7 +262,6 @@ def login():
             return render_template("login.html", error="User not found ❌")
 
         now = int(time.time())
-
         if user["lock_until"] > now:
             remaining = user["lock_until"] - now
             return render_template("login.html", locked=True, remaining_seconds=remaining)
@@ -350,10 +323,6 @@ def logout():
     return redirect(url_for("login"))
 
 
-# -----------------------------
-# FILES (shared library)
-# Admin uploads only, students download only
-# -----------------------------
 @app.route("/files")
 def files():
     redir = require_login()
@@ -450,9 +419,7 @@ def delete(file_id):
     return redirect(url_for("files"))
 
 
-# -----------------------------
-# ADMIN PANEL (manage users)
-# -----------------------------
+# ---- Admin panel routes (this fixes your dashboard error) ----
 def get_all_users():
     with db() as conn:
         return conn.execute(
@@ -468,10 +435,6 @@ def delete_user_by_id(user_id: int):
 
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
-    """
-    Admin-only login for the admin panel.
-    Uses ADMIN_USERNAME + ADMIN_PASSWORD env vars.
-    """
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
@@ -489,8 +452,6 @@ def admin_login():
 @app.route("/admin/logout")
 def admin_logout():
     session.pop("admin_username", None)
-    # don't clear whole session, only remove admin panel auth
-    # if admin is also logged-in as user, keep user session
     if session.get("username", "").lower() != ADMIN_USERNAME.lower():
         session.pop("is_admin", None)
     return redirect(url_for("admin_login"))
@@ -528,7 +489,6 @@ def admin_reset_user(user_id):
 def admin_delete_user(user_id):
     require_admin()
 
-    # Don't allow deleting the admin account via panel
     user = get_user_by_id(user_id)
     if user and user["username"].lower() == ADMIN_USERNAME.lower():
         flash("You can't delete the admin account.", "error")
@@ -538,9 +498,7 @@ def admin_delete_user(user_id):
     return redirect(url_for("admin_panel"))
 
 
-# -----------------------------
-# OPTIONAL: Forgot/Reset routes
-# -----------------------------
+# Optional reset pages (only if you already have forgot.html / reset.html)
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot_password():
     if request.method == "POST":
@@ -583,5 +541,5 @@ def reset_password(token):
     return render_template("reset.html", invalid=False)
 
 
-# Initialize DB on startup (needed for Render)
+# Render needs this on import
 init_db()
