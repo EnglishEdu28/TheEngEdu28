@@ -2,8 +2,9 @@ from flask import (
     Flask, render_template, request, redirect, url_for,
     session, abort, flash, send_from_directory
 )
-import os
+import sqlite3
 import time
+import os
 import secrets
 import hashlib
 import smtplib
@@ -11,26 +12,28 @@ from email.message import EmailMessage
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
-# Cloudinary
-import cloudinary
-import cloudinary.uploader
+# Optional: Cloudinary (external storage)
+# If you installed cloudinary in requirements.txt, this will work.
+# If not installed, uploads will fall back to local folder (Render disk - not permanent).
+CLOUDINARY_ENABLED = False
+try:
+    import cloudinary
+    import cloudinary.uploader
+    import cloudinary.api
+    CLOUDINARY_ENABLED = True
+except Exception:
+    CLOUDINARY_ENABLED = False
 
-# PostgreSQL (psycopg3)
-import psycopg
-from psycopg.rows import dict_row
-
-
-# -----------------------------
-# APP CONFIG
-# -----------------------------
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change_this_to_any_random_string")
 
+DB_NAME = os.environ.get("DB_NAME", "users.db")
+
 MAX_ATTEMPTS = 3
-LOCK_SECONDS = 5 * 60  # 5 minutes
+LOCK_SECONDS = 5 * 60
 
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")  # change on Render
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")  # set on Render
 
 RESET_TOKEN_EXPIRE_SECONDS = 15 * 60
 
@@ -40,7 +43,6 @@ MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "")
 MAIL_APP_PASSWORD = os.environ.get("MAIL_APP_PASSWORD", "")
 MAIL_FROM = os.environ.get("MAIL_FROM", MAIL_USERNAME)
 
-# Keep local uploads folder only as legacy fallback (Render disk is not permanent)
 UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "uploads")
 MAX_FILE_SIZE = 20 * 1024 * 1024
 ALLOWED_EXTENSIONS = {
@@ -49,42 +51,93 @@ ALLOWED_EXTENSIONS = {
     "zip", "rar", "ppt", "pptx",
     "xls", "xlsx"
 }
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
 
-# Cloudinary reads CLOUDINARY_URL from environment
-cloudinary.config(secure=True)
-
-
-# -----------------------------
-# POSTGRES DB
-# -----------------------------
-def _ensure_sslmode(url: str) -> str:
-    if not url:
-        return url
-    lower = url.lower()
-    if "sslmode=" in lower:
-        return url
-    if "?" in url:
-        return url + "&sslmode=require"
-    return url + "?sslmode=require"
+# Cloudinary config via env var:
+# CLOUDINARY_URL=cloudinary://API_KEY:API_SECRET@CLOUD_NAME
+if CLOUDINARY_ENABLED:
+    cloudinary_url = os.environ.get("CLOUDINARY_URL", "").strip()
+    if cloudinary_url:
+        try:
+            cloudinary.config(cloudinary_url=cloudinary_url)
+        except Exception:
+            pass
 
 
 def db():
-    url = os.environ.get("DATABASE_URL", "").strip()
-    if not url:
-        raise RuntimeError("DATABASE_URL is not set (Render Environment).")
-    url = _ensure_sslmode(url)
-    # dict_row makes fetchone()/fetchall() return dict-like rows
-    return psycopg.connect(url, row_factory=dict_row)
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
-# -----------------------------
-# UTILITIES
-# -----------------------------
 def sha256_hex(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+
+def init_db():
+    with db() as conn:
+        cur = conn.cursor()
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                email TEXT,
+                password_hash TEXT NOT NULL,
+                attempts_left INTEGER NOT NULL DEFAULT 3,
+                lock_until INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS password_resets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                used INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+        """)
+
+        # files table now supports either local file or cloud url
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                original_name TEXT NOT NULL,
+                stored_name TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                uploaded_at INTEGER NOT NULL,
+                url TEXT,
+                storage TEXT NOT NULL DEFAULT 'local'
+            )
+        """)
+
+        # Add new columns if your table existed already (safe migrations)
+        # SQLite doesn't support IF NOT EXISTS in ALTER COLUMN, so we try and ignore.
+        try:
+            cur.execute("ALTER TABLE files ADD COLUMN url TEXT")
+        except Exception:
+            pass
+        try:
+            cur.execute("ALTER TABLE files ADD COLUMN storage TEXT NOT NULL DEFAULT 'local'")
+        except Exception:
+            pass
+
+        # Create admin user if missing
+        cur.execute("SELECT id FROM users WHERE username=?", (ADMIN_USERNAME,))
+        if not cur.fetchone():
+            cur.execute("""
+                INSERT INTO users (username, email, password_hash, attempts_left, lock_until)
+                VALUES (?, ?, ?, ?, ?)
+            """, (ADMIN_USERNAME, "", generate_password_hash(ADMIN_PASSWORD), MAX_ATTEMPTS, 0))
+
+        conn.commit()
 
 
 def allowed_file(filename: str) -> bool:
@@ -106,97 +159,35 @@ def require_admin():
         abort(403)
 
 
-# -----------------------------
-# DB INIT (Postgres)
-# -----------------------------
-def init_db():
-    with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
-                    username TEXT UNIQUE NOT NULL,
-                    email TEXT,
-                    password_hash TEXT NOT NULL,
-                    attempts_left INTEGER NOT NULL DEFAULT 3,
-                    lock_until BIGINT NOT NULL DEFAULT 0
-                );
-            """)
-
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS password_resets (
-                    id SERIAL PRIMARY KEY,
-                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    token_hash TEXT NOT NULL,
-                    expires_at BIGINT NOT NULL,
-                    used BOOLEAN NOT NULL DEFAULT FALSE,
-                    created_at BIGINT NOT NULL
-                );
-            """)
-
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS files (
-                    id SERIAL PRIMARY KEY,
-                    username TEXT NOT NULL,
-                    original_name TEXT NOT NULL,
-                    stored_name TEXT NOT NULL,
-                    size BIGINT NOT NULL,
-                    uploaded_at BIGINT NOT NULL,
-                    cloud_public_id TEXT,
-                    cloud_url TEXT
-                );
-            """)
-
-            # Ensure admin user exists
-            cur.execute("SELECT id FROM users WHERE username=%s", (ADMIN_USERNAME,))
-            if cur.fetchone() is None:
-                cur.execute("""
-                    INSERT INTO users (username, email, password_hash, attempts_left, lock_until)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (ADMIN_USERNAME, "", generate_password_hash(ADMIN_PASSWORD), MAX_ATTEMPTS, 0))
-
-        conn.commit()
-
-
-# -----------------------------
-# USER QUERIES
-# -----------------------------
 def get_user(username: str):
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM users WHERE username=%s", (username,))
-            return cur.fetchone()
+        return conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
 
 
 def get_user_by_id(user_id: int):
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM users WHERE id=%s", (user_id,))
-            return cur.fetchone()
+        return conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
 
 
 def create_user(username: str, email: str, password: str) -> bool:
     try:
         with db() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO users (username, email, password_hash, attempts_left, lock_until)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (username, email, generate_password_hash(password), MAX_ATTEMPTS, 0))
+            conn.execute("""
+                INSERT INTO users (username, email, password_hash, attempts_left, lock_until)
+                VALUES (?, ?, ?, ?, ?)
+            """, (username, email, generate_password_hash(password), MAX_ATTEMPTS, 0))
             conn.commit()
         return True
-    except Exception:
-        # Most likely unique violation on username
+    except sqlite3.IntegrityError:
         return False
 
 
 def update_attempts_and_lock(user_id: int, attempts_left: int, lock_until: int):
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE users SET attempts_left=%s, lock_until=%s WHERE id=%s",
-                (attempts_left, lock_until, user_id)
-            )
+        conn.execute(
+            "UPDATE users SET attempts_left=?, lock_until=? WHERE id=?",
+            (attempts_left, lock_until, user_id)
+        )
         conn.commit()
 
 
@@ -206,17 +197,13 @@ def reset_user_security(user_id: int):
 
 def set_user_password(user_id: int, new_password: str):
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE users SET password_hash=%s WHERE id=%s",
-                (generate_password_hash(new_password), user_id)
-            )
+        conn.execute(
+            "UPDATE users SET password_hash=? WHERE id=?",
+            (generate_password_hash(new_password), user_id)
+        )
         conn.commit()
 
 
-# -----------------------------
-# EMAIL RESET
-# -----------------------------
 def send_reset_email(to_email: str, reset_link: str):
     if not MAIL_USERNAME or not MAIL_APP_PASSWORD or not MAIL_FROM:
         raise RuntimeError("Email not configured.")
@@ -243,12 +230,11 @@ def create_password_reset(user_id: int) -> str:
     expires_at = now + RESET_TOKEN_EXPIRE_SECONDS
 
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE password_resets SET used=TRUE WHERE user_id=%s", (user_id,))
-            cur.execute("""
-                INSERT INTO password_resets (user_id, token_hash, expires_at, used, created_at)
-                VALUES (%s, %s, %s, FALSE, %s)
-            """, (user_id, token_hash, expires_at, now))
+        conn.execute("UPDATE password_resets SET used=1 WHERE user_id=?", (user_id,))
+        conn.execute("""
+            INSERT INTO password_resets (user_id, token_hash, expires_at, used, created_at)
+            VALUES (?, ?, ?, 0, ?)
+        """, (user_id, token_hash, expires_at, now))
         conn.commit()
 
     return raw_token
@@ -258,25 +244,19 @@ def find_valid_reset(token: str):
     token_hash = sha256_hex(token)
     now = int(time.time())
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT * FROM password_resets
-                WHERE token_hash=%s AND used=FALSE AND expires_at>%s
-                ORDER BY id DESC LIMIT 1
-            """, (token_hash, now))
-            return cur.fetchone()
+        return conn.execute("""
+            SELECT * FROM password_resets
+            WHERE token_hash=? AND used=0 AND expires_at>?
+            ORDER BY id DESC LIMIT 1
+        """, (token_hash, now)).fetchone()
 
 
 def mark_reset_used(reset_id: int):
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE password_resets SET used=TRUE WHERE id=%s", (reset_id,))
+        conn.execute("UPDATE password_resets SET used=1 WHERE id=?", (reset_id,))
         conn.commit()
 
 
-# -----------------------------
-# ROUTES
-# -----------------------------
 @app.route("/")
 def home():
     return redirect(url_for("login"))
@@ -329,7 +309,7 @@ def login():
             session["is_admin"] = (user["username"].lower() == ADMIN_USERNAME.lower())
             return redirect(url_for("dashboard"))
 
-        attempts_left = int(user["attempts_left"]) - 1
+        attempts_left = user["attempts_left"] - 1
         if attempts_left <= 0:
             update_attempts_and_lock(user["id"], 0, now + LOCK_SECONDS)
             return render_template("login.html", locked=True, remaining_seconds=LOCK_SECONDS)
@@ -386,15 +366,41 @@ def files():
         return redir
 
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM files ORDER BY uploaded_at DESC")
-            rows = cur.fetchall()
+        # ✅ ASCENDING ORDER (A → Z) BY FILE NAME
+        rows = conn.execute("""
+            SELECT * FROM files
+            ORDER BY LOWER(original_name) ASC
+        """).fetchall()
+
     return render_template("files.html", files=rows)
 
 
-# -----------------------------
-# FILE UPLOAD (Cloudinary)
-# -----------------------------
+def save_file_to_cloudinary(file_storage, stored_name: str):
+    """
+    Uploads to Cloudinary if configured.
+    Returns: (url, bytes_size)
+    """
+    if not CLOUDINARY_ENABLED or not os.environ.get("CLOUDINARY_URL"):
+        return None, None
+
+    # Use "raw" for PDFs/docs/zip so Cloudinary stores them correctly
+    filename = file_storage.filename or ""
+    ext = filename.rsplit(".", 1)[1].lower() if "." in filename else ""
+    resource_type = "raw" if ext in ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "zip", "rar", "txt"] else "image"
+
+    result = cloudinary.uploader.upload(
+        file_storage,
+        public_id=f"uploads/{stored_name.rsplit('.', 1)[0]}",
+        resource_type=resource_type,
+        overwrite=True
+    )
+
+    url = result.get("secure_url") or result.get("url")
+    # bytes may be present as "bytes"
+    size = result.get("bytes")
+    return url, size
+
+
 @app.route("/upload", methods=["POST"])
 def upload():
     redir = require_login()
@@ -418,32 +424,35 @@ def upload():
         return redirect(url_for("files"))
 
     original = secure_filename(f.filename)
-    public_id = f"uploads/{session['username']}_{int(time.time())}_{secrets.token_hex(8)}"
+    ext = original.rsplit(".", 1)[1].lower()
+    stored = f"admin_{int(time.time())}_{os.urandom(6).hex()}.{ext}"
 
-    try:
-        result = cloudinary.uploader.upload(
-            f,
-            resource_type="raw",
-            public_id=public_id,
-            overwrite=False
-        )
-    except Exception as e:
-        flash(f"Cloud upload failed: {e}", "error")
-        return redirect(url_for("files"))
-
-    url = result.get("secure_url")
-    size = int(result.get("bytes") or 0)
     now = int(time.time())
 
+    # Try Cloudinary first (if configured)
+    url, cloud_size = save_file_to_cloudinary(f, stored)
+
+    if url:
+        size = int(cloud_size or 0)
+        storage = "cloudinary"
+        stored_name = stored  # keep name reference
+        # No local save if cloud succeeded
+    else:
+        # Local save fallback (NOT permanent on Render free plan)
+        save_path = os.path.join(app.config["UPLOAD_FOLDER"], stored)
+        f.save(save_path)
+        size = os.path.getsize(save_path)
+        storage = "local"
+        stored_name = stored
+
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO files (username, original_name, stored_name, size, uploaded_at, cloud_public_id, cloud_url)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (session["username"], original, public_id, size, now, public_id, url))
+        conn.execute("""
+            INSERT INTO files (username, original_name, stored_name, size, uploaded_at, url, storage)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (session["username"], original, stored_name, size, now, url, storage))
         conn.commit()
 
-    flash("Uploaded successfully ✅ (saved on Cloudinary)", "success")
+    flash("Uploaded successfully ✅", "success")
     return redirect(url_for("files"))
 
 
@@ -454,17 +463,16 @@ def download(file_id):
         return redir
 
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM files WHERE id=%s", (file_id,))
-            row = cur.fetchone()
+        row = conn.execute("SELECT * FROM files WHERE id=?", (file_id,)).fetchone()
 
     if not row:
         abort(404)
 
-    if row.get("cloud_url"):
-        return redirect(row["cloud_url"])
+    # If stored on Cloudinary, redirect to the cloud URL
+    if row.get("storage") == "cloudinary" and row.get("url"):
+        return redirect(row["url"])
 
-    # legacy fallback
+    # Otherwise serve local file
     return send_from_directory(
         app.config["UPLOAD_FOLDER"],
         row["stored_name"],
@@ -483,40 +491,33 @@ def delete(file_id):
         abort(403)
 
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM files WHERE id=%s", (file_id,))
-            row = cur.fetchone()
-            if not row:
-                abort(404)
-
-            cur.execute("DELETE FROM files WHERE id=%s", (file_id,))
+        row = conn.execute("SELECT * FROM files WHERE id=?", (file_id,)).fetchone()
+        if not row:
+            abort(404)
+        conn.execute("DELETE FROM files WHERE id=?", (file_id,))
         conn.commit()
 
-    public_id = row.get("cloud_public_id") or row.get("stored_name")
-    if row.get("cloud_url") and public_id:
-        try:
-            cloudinary.uploader.destroy(public_id, resource_type="raw")
-        except Exception:
-            pass
+    # Delete local file if it exists
+    if row.get("storage") != "cloudinary":
+        path = os.path.join(app.config["UPLOAD_FOLDER"], row["stored_name"])
+        if os.path.exists(path):
+            os.remove(path)
 
     flash("Deleted ✅", "success")
     return redirect(url_for("files"))
 
 
-# -----------------------------
-# ADMIN PANEL
-# -----------------------------
+# ---- Admin panel routes ----
 def get_all_users():
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, username, email, attempts_left, lock_until FROM users ORDER BY id DESC")
-            return cur.fetchall()
+        return conn.execute(
+            "SELECT id, username, email, attempts_left, lock_until FROM users ORDER BY id DESC"
+        ).fetchall()
 
 
 def delete_user_by_id(user_id: int):
     with db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
         conn.commit()
 
 
@@ -585,14 +586,14 @@ def admin_delete_user(user_id):
     return redirect(url_for("admin_panel"))
 
 
-# Optional reset pages (only if you already have forgot.html / reset.html)
+# ---- Forgot / Reset password ----
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot_password():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         user = get_user(username)
 
-        if user and user.get("email"):
+        if user and user["email"]:
             try:
                 token = create_password_reset(user["id"])
                 reset_link = url_for("reset_password", token=token, _external=True)
@@ -630,3 +631,7 @@ def reset_password(token):
 
 # Render needs this on import
 init_db()
+
+# Local run
+if __name__ == "__main__":
+    app.run(debug=True)
