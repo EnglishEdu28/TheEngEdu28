@@ -3,114 +3,105 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Profile</title>
+  <title>Profile • University Portal</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <main class="page">
-    <section class="auth-card" style="max-width: 920px;">
-      <header class="auth-header">
-        <div class="logo-badge">👤</div>
-        <h1>Profile</h1>
-        <p>Your account details and security status</p>
+    <section class="shell" style="max-width: 980px;">
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="appmark" aria-hidden="true">👤</div>
+          <div>
+            <div class="topbar-title">My Profile</div>
+            <div class="topbar-sub">Account details • Security</div>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <a class="chip" href="{{ url_for('dashboard') }}">← Dashboard</a>
+          <a class="chip chip-danger" href="{{ url_for('logout') }}">Logout</a>
+        </div>
       </header>
 
-      <div class="profile-top">
-        <div class="profile-user">
-          <div class="avatar" aria-hidden="true">
-            {{ (username|default("U", true))[0]|upper }}
-          </div>
-
-          <div>
-            <div class="profile-name">
-              {{ username|default("User", true) }}
-
-              {% if is_admin %}
-                <span class="badge badge-admin">Admin</span>
-              {% else %}
-                <span class="badge">User</span>
-              {% endif %}
-            </div>
-
-            <div class="profile-meta">
-              Signed in • Manage your security & materials access
-            </div>
-          </div>
-        </div>
-
-        <div class="status-card">
-          <div class="status-title">Status</div>
-
-          {% if locked %}
-            <div class="status-pill status-danger">Locked 🔒</div>
-            <div class="status-sub">Try again in <b>{{ remaining|default(0, true) }}</b> seconds</div>
-          {% else %}
-            <div class="status-pill status-ok">Active ✅</div>
-            <div class="status-sub">Attempts left: <b>{{ attempts_left|default(0, true) }}</b></div>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="grid-2">
-        <div class="panel">
-          <div class="panel-title">Security</div>
-          <div class="panel-body">
-            <div class="kv">
-              <span class="k">Login attempts left</span>
-              <span class="v">{{ attempts_left|default(0, true) }}</span>
-            </div>
-            <div class="kv">
-              <span class="k">Account lock</span>
-              <span class="v">
-                {% if locked %}
-                  Enabled ({{ remaining|default(0, true) }}s)
+      <section class="card">
+        <div class="profile-top">
+          <div class="profile-user">
+            <div class="avatar" aria-hidden="true">{{ (username|default("U", true))[0]|upper }}</div>
+            <div>
+              <div class="profile-name">
+                {{ username|default("User", true) }}
+                {% if is_admin %}
+                  <span class="badge badge-admin">Admin</span>
                 {% else %}
-                  Not locked
+                  <span class="badge">Student</span>
                 {% endif %}
-              </span>
-            </div>
-            <div class="kv">
-              <span class="k">Password reset</span>
-              <span class="v">Available</span>
-            </div>
-
-            <div class="hint" style="margin-top: 10px;">
-              Tip: use a strong password and don’t share your login.
+              </div>
+              <div class="profile-meta">Signed in • Keep your account secure</div>
             </div>
           </div>
-        </div>
 
-        <div class="panel">
-          <div class="panel-title">Quick actions</div>
-          <div class="panel-body">
-            <div class="actions-row">
-              <a class="btn-outline" href="{{ url_for('dashboard') }}">Dashboard</a>
-              <a class="btn-outline" href="{{ url_for('files') }}">Course Files</a>
-              {% if is_admin %}
-                <a class="btn-outline" href="{{ url_for('admin_panel') }}">Admin Panel</a>
-              {% endif %}
-              <a class="btn-outline btn-outline-danger" href="{{ url_for('logout') }}">Logout</a>
-            </div>
-
-            {% if is_admin %}
-              <div class="alert" style="margin-top: 14px;">
-                <strong>Admin access</strong>
-                <span>You can upload course materials and manage users from the Admin Panel.</span>
-              </div>
+          <div class="status-card">
+            <div class="status-title">Status</div>
+            {% if locked %}
+              <div class="status-pill status-danger">Locked 🔒</div>
+              <div class="profile-meta">Try again in <b>{{ remaining|default(0, true) }}</b> seconds</div>
             {% else %}
-              <div class="alert" style="margin-top: 14px;">
-                <strong>Student access</strong>
-                <span>You can download course materials from the Course Files page.</span>
-              </div>
+              <div class="status-pill status-ok">Active ✅</div>
+              <div class="profile-meta">Attempts left: <b>{{ attempts_left|default(0, true) }}</b></div>
             {% endif %}
           </div>
         </div>
-      </div>
 
-      <div class="row" style="margin-top:18px;">
-        <a class="link" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
-        <a class="link" href="{{ url_for('logout') }}">Logout</a>
-      </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-title">Security</div>
+            <div class="panel-body">
+              <div class="kv">
+                <span class="k">Login attempts left</span>
+                <span class="v">{{ attempts_left|default(0, true) }}</span>
+              </div>
+              <div class="kv">
+                <span class="k">Account lock</span>
+                <span class="v">{% if locked %}Enabled{% else %}Not locked{% endif %}</span>
+              </div>
+              <div class="kv">
+                <span class="k">Password reset</span>
+                <span class="v">Available</span>
+              </div>
+              <div class="hint" style="margin-top:10px;">
+                Tip: Don’t share your password with anyone.
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-title">Quick actions</div>
+            <div class="panel-body">
+              <div class="row">
+                <a class="btn-soft" href="{{ url_for('files') }}">Course Materials</a>
+                <a class="btn-soft" href="{{ url_for('dashboard') }}">Dashboard</a>
+                {% if is_admin %}
+                  <a class="btn-soft" href="{{ url_for('admin_panel') }}">Admin Panel</a>
+                {% endif %}
+                <a class="btn-danger" href="{{ url_for('logout') }}">Logout</a>
+              </div>
+
+              {% if is_admin %}
+                <div class="alert" style="margin-top:14px;">
+                  <strong>Admin access</strong>
+                  <span>You can upload materials and manage users.</span>
+                </div>
+              {% else %}
+                <div class="alert" style="margin-top:14px;">
+                  <strong>Student access</strong>
+                  <span>You can download materials from the Course Materials page.</span>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
     </section>
 
     <div class="bg-orb orb-1" aria-hidden="true"></div>
