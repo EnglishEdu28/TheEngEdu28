@@ -3,13 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dashboard</title>
+  <title>Dashboard • University Portal</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <main class="page">
     <section class="shell" style="max-width: 980px;">
-      <!-- Topbar -->
       <header class="topbar">
         <div class="topbar-left">
           <div class="appmark" aria-hidden="true">🎓</div>
@@ -25,34 +24,34 @@
         </div>
       </header>
 
-      <!-- Main card -->
       <section class="card">
         <div class="dash-hero">
           <div>
             <div class="dash-kicker">Welcome back</div>
             <h1 class="dash-title">Hello, {{ username }} 👋</h1>
-            <p class="dash-sub">
-              Access course materials, view your profile, and keep your account secure.
-            </p>
+            <p class="dash-sub">Access course materials and manage your account securely.</p>
 
             <div class="dash-actions">
               <a class="btn-primary" href="{{ url_for('files') }}">Open Course Materials →</a>
-              <a class="btn-link" href="{{ url_for('profile') }}">View Profile</a>
+              <a class="btn-soft" href="{{ url_for('profile') }}">View Profile</a>
+              {% if session.get("is_admin") %}
+                <a class="btn-soft" href="{{ url_for('admin_panel') }}">Admin Panel</a>
+              {% endif %}
             </div>
           </div>
 
-          <div class="dash-stats">
+          <div>
             <div class="stat">
               <div class="stat-title">Account</div>
               <div class="stat-value">Active ✅</div>
               <div class="stat-sub">Logged in as <b>{{ username }}</b></div>
             </div>
 
-            <div class="stat">
+            <div class="stat" style="margin-top:12px;">
               <div class="stat-title">Role</div>
               {% if session.get("is_admin") %}
                 <div class="stat-value">Admin</div>
-                <div class="stat-sub">Upload & manage users</div>
+                <div class="stat-sub">Upload materials • Manage users</div>
               {% else %}
                 <div class="stat-value">Student</div>
                 <div class="stat-sub">Download materials</div>
@@ -89,14 +88,10 @@
             <a class="tile" href="{{ url_for('logout') }}">
               <div class="tile-ico" aria-hidden="true">🚪</div>
               <div class="tile-title">Logout</div>
-              <div class="tile-sub">Sign out of your account safely</div>
+              <div class="tile-sub">Sign out safely</div>
               <div class="tile-go">Logout →</div>
             </a>
           {% endif %}
-        </div>
-
-        <div class="footnote">
-          Tip: If you can’t access a page, log out and log back in.
         </div>
       </section>
     </section>
