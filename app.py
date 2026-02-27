@@ -8,15 +8,14 @@ import secrets
 import hashlib
 import smtplib
 from email.message import EmailMessage
-
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
-import psycopg2
-import psycopg2.extras
-
 import cloudinary
 import cloudinary.uploader
+
+import psycopg
+from psycopg.rows import dict_row
 
 
 # =============================
@@ -27,21 +26,18 @@ app.secret_key = os.environ.get("SECRET_KEY", "change_this_to_any_random_string"
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is missing. Put your Supabase Pooler Postgres URL in Render env vars.")
+    raise RuntimeError("DATABASE_URL is missing. Set DATABASE_URL in Render environment variables.")
 
-# Force sslmode=require if missing (pooler usually needs SSL)
+# ensure sslmode=require for Supabase
 if "sslmode=" not in DATABASE_URL:
     DATABASE_URL += "&sslmode=require" if "?" in DATABASE_URL else "?sslmode=require"
-
-# Optional: make pooler connections more stable
-if "application_name=" not in DATABASE_URL:
-    DATABASE_URL += "&application_name=render" if "?" in DATABASE_URL else "?application_name=render"
 
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 MAX_ATTEMPTS = 3
 LOCK_SECONDS = 5 * 60
+
 RESET_TOKEN_EXPIRE_SECONDS = 15 * 60
 
 MAIL_HOST = os.environ.get("MAIL_HOST", "smtp.gmail.com")
@@ -61,22 +57,16 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
 
 CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "").strip()
 if not CLOUDINARY_URL:
-    raise RuntimeError("CLOUDINARY_URL is missing. Set CLOUDINARY_URL in Render env vars.")
+    raise RuntimeError("CLOUDINARY_URL is missing. Set CLOUDINARY_URL in Render environment variables.")
 cloudinary.config(cloudinary_url=CLOUDINARY_URL)
 
 
 # =============================
-# DATABASE (SUPABASE POSTGRES)
+# DB (Supabase Postgres via psycopg v3)
 # =============================
 def db_conn():
-    """
-    Uses RealDictCursor so rows behave like dicts:
-    row["username"], row["id"], etc.
-    """
-    return psycopg2.connect(
-        DATABASE_URL,
-        cursor_factory=psycopg2.extras.RealDictCursor
-    )
+    # dict_row => rows are dict-like: row["username"]
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
 def sha256_hex(s: str) -> str:
@@ -84,9 +74,6 @@ def sha256_hex(s: str) -> str:
 
 
 def init_db():
-    """
-    Creates tables if missing + ensures admin user exists.
-    """
     with db_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -111,7 +98,6 @@ def init_db():
                 );
             """)
 
-            # File list stays in DB, actual file stored in Cloudinary
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS files (
                     id SERIAL PRIMARY KEY,
@@ -146,11 +132,6 @@ def require_login():
     if "user_id" not in session:
         return redirect(url_for("login"))
     return None
-
-
-def require_admin():
-    if not session.get("is_admin"):
-        abort(403)
 
 
 def get_user(username: str):
@@ -207,7 +188,7 @@ def set_user_password(user_id: int, new_password: str):
 
 
 # =============================
-# PASSWORD RESET (EMAIL)
+# EMAIL RESET
 # =============================
 def send_reset_email(to_email: str, reset_link: str):
     if not MAIL_USERNAME or not MAIL_APP_PASSWORD or not MAIL_FROM:
@@ -273,7 +254,6 @@ def upload_to_cloudinary(file_storage, public_id_base: str):
     filename = file_storage.filename or ""
     ext = filename.rsplit(".", 1)[1].lower() if "." in filename else ""
 
-    # PDFs and docs must be "raw"
     resource_type = "raw" if ext in [
         "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "zip", "rar", "txt"
     ] else "image"
@@ -288,28 +268,6 @@ def upload_to_cloudinary(file_storage, public_id_base: str):
     url = result.get("secure_url") or result.get("url")
     size = int(result.get("bytes") or 0)
     return url, size
-
-
-# =============================
-# DEBUG ROUTES (SAFE)
-# =============================
-@app.get("/debug/health")
-def debug_health():
-    """
-    Confirms Render is reading DATABASE_URL and can connect to Postgres.
-    Does NOT expose secrets (only small preview).
-    """
-    preview = os.environ.get("DATABASE_URL", "")[:35] + "..." if os.environ.get("DATABASE_URL") else ""
-    ok_db = False
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1 AS ok;")
-                ok_db = bool(cur.fetchone())
-    except Exception as e:
-        return {"ok": False, "db_ok": False, "db_url_preview": preview, "error": str(e)}, 500
-
-    return {"ok": True, "db_ok": ok_db, "db_url_preview": preview}
 
 
 # =============================
@@ -424,7 +382,6 @@ def files():
 
     with db_conn() as conn:
         with conn.cursor() as cur:
-            # ✅ ascending A → Z
             cur.execute("SELECT * FROM files ORDER BY LOWER(original_name) ASC;")
             rows = cur.fetchall()
 
@@ -436,6 +393,7 @@ def upload():
     redir = require_login()
     if redir:
         return redir
+
     if not session.get("is_admin"):
         abort(403)
 
@@ -458,8 +416,8 @@ def upload():
     try:
         url, size = upload_to_cloudinary(f, public_id_base)
     except Exception as e:
-        print("Cloud upload failed:", e)
-        flash("Upload failed on Cloudinary. Check Render logs.", "error")
+        print("Cloudinary upload error:", e)
+        flash("Upload failed. Check Render logs.", "error")
         return redirect(url_for("files"))
 
     now = int(time.time())
@@ -489,25 +447,7 @@ def download(file_id):
     if not row:
         abort(404)
 
-    # Always redirect to Cloudinary file
     return redirect(row["url"])
-
-
-@app.route("/delete/<int:file_id>", methods=["POST"])
-def delete(file_id):
-    redir = require_login()
-    if redir:
-        return redir
-    if not session.get("is_admin"):
-        abort(403)
-
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM files WHERE id=%s", (file_id,))
-        conn.commit()
-
-    flash("Deleted ✅", "success")
-    return redirect(url_for("files"))
 
 
 # =============================
