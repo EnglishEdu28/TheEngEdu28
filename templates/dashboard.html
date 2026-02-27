@@ -1,43 +1,109 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dashboard</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+  <main class="page">
+    <section class="shell" style="max-width: 980px;">
+      <!-- Topbar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="appmark" aria-hidden="true">🎓</div>
+          <div>
+            <div class="topbar-title">Student Portal</div>
+            <div class="topbar-sub">Dashboard • Quick access</div>
+          </div>
+        </div>
 
-<main class="page">
-  <section class="auth-card" style="max-width: 900px;">
+        <div class="topbar-right">
+          <a class="chip" href="{{ url_for('profile') }}">My Profile</a>
+          <a class="chip chip-danger" href="{{ url_for('logout') }}">Logout</a>
+        </div>
+      </header>
 
-    <header class="auth-header">
-      <div class="logo-badge">
-        {% if session.get("is_admin") %}👑{% else %}🎓{% endif %}
-      </div>
-      <h1>Welcome, {{ username }}</h1>
-      <p>{% if session.get("is_admin") %}Administrator{% else %}Student{% endif %} Dashboard</p>
-    </header>
+      <!-- Main card -->
+      <section class="card">
+        <div class="dash-hero">
+          <div>
+            <div class="dash-kicker">Welcome back</div>
+            <h1 class="dash-title">Hello, {{ username }} 👋</h1>
+            <p class="dash-sub">
+              Access course materials, view your profile, and keep your account secure.
+            </p>
 
-    <div style="display:grid; gap:14px; margin-top:18px;">
-      <a href="{{ url_for('files') }}" class="btn">Course Materials <span class="btn-arrow">→</span></a>
-      <a href="{{ url_for('profile') }}" class="btn" style="filter: brightness(0.95);">My Profile <span class="btn-arrow">→</span></a>
+            <div class="dash-actions">
+              <a class="btn-primary" href="{{ url_for('files') }}">Open Course Materials →</a>
+              <a class="btn-link" href="{{ url_for('profile') }}">View Profile</a>
+            </div>
+          </div>
 
-      {% if session.get("is_admin") %}
-        <a href="{{ url_for('admin_panel') }}" class="btn" style="filter: brightness(0.92);">Admin Panel <span class="btn-arrow">→</span></a>
-      {% endif %}
-    </div>
+          <div class="dash-stats">
+            <div class="stat">
+              <div class="stat-title">Account</div>
+              <div class="stat-value">Active ✅</div>
+              <div class="stat-sub">Logged in as <b>{{ username }}</b></div>
+            </div>
 
-    <div style="margin-top:18px; text-align:center;">
-      <a href="{{ url_for('logout') }}" class="link">Logout</a>
-    </div>
+            <div class="stat">
+              <div class="stat-title">Role</div>
+              {% if session.get("is_admin") %}
+                <div class="stat-value">Admin</div>
+                <div class="stat-sub">Upload & manage users</div>
+              {% else %}
+                <div class="stat-value">Student</div>
+                <div class="stat-sub">Download materials</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
 
-  </section>
+        <hr class="rule" />
 
-  <div class="bg-orb orb-1"></div>
-  <div class="bg-orb orb-2"></div>
-  <div class="bg-grid"></div>
-</main>
+        <div class="grid-3">
+          <a class="tile" href="{{ url_for('files') }}">
+            <div class="tile-ico" aria-hidden="true">📚</div>
+            <div class="tile-title">Course Materials</div>
+            <div class="tile-sub">Download PDFs, slides, and handouts</div>
+            <div class="tile-go">Open →</div>
+          </a>
 
+          <a class="tile" href="{{ url_for('profile') }}">
+            <div class="tile-ico" aria-hidden="true">👤</div>
+            <div class="tile-title">My Profile</div>
+            <div class="tile-sub">View security status & account info</div>
+            <div class="tile-go">Open →</div>
+          </a>
+
+          {% if session.get("is_admin") %}
+            <a class="tile" href="{{ url_for('admin_panel') }}">
+              <div class="tile-ico" aria-hidden="true">🛠️</div>
+              <div class="tile-title">Admin Panel</div>
+              <div class="tile-sub">Manage users & reset locks</div>
+              <div class="tile-go">Open →</div>
+            </a>
+          {% else %}
+            <a class="tile" href="{{ url_for('logout') }}">
+              <div class="tile-ico" aria-hidden="true">🚪</div>
+              <div class="tile-title">Logout</div>
+              <div class="tile-sub">Sign out of your account safely</div>
+              <div class="tile-go">Logout →</div>
+            </a>
+          {% endif %}
+        </div>
+
+        <div class="footnote">
+          Tip: If you can’t access a page, log out and log back in.
+        </div>
+      </section>
+    </section>
+
+    <div class="bg-orb orb-1" aria-hidden="true"></div>
+    <div class="bg-orb orb-2" aria-hidden="true"></div>
+    <div class="bg-grid" aria-hidden="true"></div>
+  </main>
 </body>
 </html>
