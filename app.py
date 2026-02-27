@@ -26,9 +26,9 @@ app.secret_key = os.environ.get("SECRET_KEY", "change_this_to_any_random_string"
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is missing. Set DATABASE_URL in Render environment variables.")
+    raise RuntimeError("DATABASE_URL is missing. Set DATABASE_URL in Render env vars.")
 
-# ensure sslmode=require for Supabase
+# Ensure sslmode=require
 if "sslmode=" not in DATABASE_URL:
     DATABASE_URL += "&sslmode=require" if "?" in DATABASE_URL else "?sslmode=require"
 
@@ -57,7 +57,7 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
 
 CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "").strip()
 if not CLOUDINARY_URL:
-    raise RuntimeError("CLOUDINARY_URL is missing. Set CLOUDINARY_URL in Render environment variables.")
+    raise RuntimeError("CLOUDINARY_URL is missing. Set CLOUDINARY_URL in Render env vars.")
 cloudinary.config(cloudinary_url=CLOUDINARY_URL)
 
 
@@ -65,7 +65,6 @@ cloudinary.config(cloudinary_url=CLOUDINARY_URL)
 # DB (Supabase Postgres via psycopg v3)
 # =============================
 def db_conn():
-    # dict_row => rows are dict-like: row["username"]
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
@@ -188,7 +187,7 @@ def set_user_password(user_id: int, new_password: str):
 
 
 # =============================
-# EMAIL RESET
+# PASSWORD RESET
 # =============================
 def send_reset_email(to_email: str, reset_link: str):
     if not MAIL_USERNAME or not MAIL_APP_PASSWORD or not MAIL_FROM:
@@ -448,6 +447,50 @@ def download(file_id):
         abort(404)
 
     return redirect(row["url"])
+
+
+# -------- Forgot / Reset routes (fixes your login.html error) --------
+@app.route("/forgot", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        user = get_user(username)
+
+        # Always return same message (avoid account enumeration)
+        if user and user.get("email"):
+            try:
+                token = create_password_reset(user["id"])
+                reset_link = url_for("reset_password", token=token, _external=True)
+                send_reset_email(user["email"], reset_link)
+            except Exception as e:
+                print("send reset error:", e)
+
+        return render_template("forgot.html", info="If that account exists, a reset link has been sent.")
+
+    return render_template("forgot.html")
+
+
+@app.route("/reset/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    reset_row = find_valid_reset(token)
+    if not reset_row:
+        return render_template("reset.html", invalid=True)
+
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm", "")
+
+        if len(password) < 4:
+            return render_template("reset.html", invalid=False, error="Password must be at least 4 characters.")
+        if password != confirm:
+            return render_template("reset.html", invalid=False, error="Passwords do not match.")
+
+        set_user_password(reset_row["user_id"], password)
+        reset_user_security(reset_row["user_id"])
+        mark_reset_used(reset_row["id"])
+        return render_template("reset.html", success=True)
+
+    return render_template("reset.html", invalid=False)
 
 
 # =============================
