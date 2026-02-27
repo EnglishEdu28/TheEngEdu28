@@ -1,5 +1,5 @@
 Flask==3.0.3
 gunicorn==22.0.0
 Werkzeug==3.0.3
-psycopg[binary]==3.2.1
+psycopg[binary]==3.2.13
 cloudinary==1.41.0
