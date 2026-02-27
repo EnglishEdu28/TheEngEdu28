@@ -3,13 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Course Materials</title>
+  <title>Course Materials • University Portal</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <main class="page">
     <section class="shell" style="max-width: 1020px;">
-      <!-- Top header -->
       <header class="topbar">
         <div class="topbar-left">
           <div class="appmark" aria-hidden="true">📚</div>
@@ -25,10 +24,9 @@
         </div>
       </header>
 
-      <!-- Flash messages -->
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-          <div class="stack">
+          <div style="display:grid; gap:10px; margin-bottom:12px;">
             {% for cat, msg in messages %}
               <div class="alert {% if cat == 'error' %}alert-error{% endif %}">{{ msg }}</div>
             {% endfor %}
@@ -36,62 +34,38 @@
         {% endif %}
       {% endwith %}
 
-      <!-- Main card -->
       <section class="card">
-        <!-- Admin upload or student notice -->
         {% if session.get("is_admin") %}
-          <div class="card-head">
-            <div>
-              <div class="card-title">Upload materials</div>
-              <div class="card-sub">Files are stored safely (Cloudinary) so they don’t vanish on Render.</div>
-            </div>
-            <span class="badge badge-admin">Admin</span>
+          <div class="alert" style="margin-bottom:12px;">
+            <strong>Admin upload</strong>
+            <span>Upload materials for students. Files are stored externally so they won’t vanish.</span>
           </div>
 
-          <form class="upload" method="POST" action="{{ url_for('upload') }}" enctype="multipart/form-data">
-            <label class="drop">
-              <input class="drop-input" type="file" name="file" required />
-              <div class="drop-ui">
-                <div class="drop-icon" aria-hidden="true">⬆️</div>
-                <div class="drop-text">
-                  <div class="drop-title">Choose a file to upload</div>
-                  <div class="drop-sub">pdf, docx, pptx, xlsx, images, zip… (max 20MB)</div>
-                </div>
-              </div>
-            </label>
-
-            <button class="btn-primary" type="submit">
-              Upload <span aria-hidden="true">→</span>
-            </button>
-          </form>
-        {% else %}
-          <div class="notice">
-            <div class="notice-icon" aria-hidden="true">🎓</div>
-            <div>
-              <div class="notice-title">Students</div>
-              <div class="notice-sub">You can only download files. Only admin uploads materials.</div>
+          <form class="form" method="POST" action="{{ url_for('upload') }}" enctype="multipart/form-data">
+            <div class="field">
+              <label>Select file</label>
+              <input class="input" type="file" name="file" required />
+              <div class="hint">Allowed: pdf, docx, pptx, xlsx, images, zip… (max 20MB)</div>
             </div>
+            <button class="btn-primary" type="submit">Upload →</button>
+          </form>
+
+          <hr class="rule" />
+        {% else %}
+          <div class="alert" style="margin-bottom:12px;">
+            <strong>Students</strong>
+            <span>You can only download files. Only admin uploads materials.</span>
           </div>
         {% endif %}
 
-        <!-- Toolbar -->
         <div class="toolbar">
-          <div class="toolbar-left">
-            <div class="pill">
-              <span class="pill-dot" aria-hidden="true"></span>
-              <span id="countText">Showing {{ files|length }} file{{ '' if files|length == 1 else 's' }}</span>
-            </div>
-          </div>
-
-          <div class="toolbar-right">
-            <div class="search">
-              <span class="search-ico" aria-hidden="true">🔎</span>
-              <input id="searchInput" class="search-input" type="text" placeholder="Search files (name / uploader)" />
-            </div>
+          <div class="badge">Showing {{ files|length }} file{{ '' if files|length == 1 else 's' }}</div>
+          <div class="search">
+            <span aria-hidden="true">🔎</span>
+            <input id="searchInput" class="search-input" type="text" placeholder="Search files (name / uploader)" />
           </div>
         </div>
 
-        <!-- Files list -->
         {% if files and files|length > 0 %}
           <div class="table-wrap">
             <table class="table" id="filesTable">
@@ -111,23 +85,23 @@
                       <div class="filecell">
                         <div class="fileicon" aria-hidden="true">
                           {% if ext == 'pdf' %}PDF
-                          {% elif ext in ['doc', 'docx'] %}DOC
-                          {% elif ext in ['ppt', 'pptx'] %}PPT
-                          {% elif ext in ['xls', 'xlsx'] %}XLS
+                          {% elif ext in ['doc','docx'] %}DOC
+                          {% elif ext in ['ppt','pptx'] %}PPT
+                          {% elif ext in ['xls','xlsx'] %}XLS
                           {% elif ext in ['png','jpg','jpeg','gif'] %}IMG
                           {% elif ext in ['zip','rar'] %}ZIP
                           {% else %}FILE{% endif %}
                         </div>
-                        <div class="filemeta">
+                        <div>
                           <div class="filename">{{ f.original_name }}</div>
-                          <div class="filesub">
-                            <span class="badge badge-soft">{{ ext if ext else 'file' }}</span>
+                          <div style="margin-top:4px;">
+                            <span class="badge">{{ ext if ext else 'file' }}</span>
                           </div>
                         </div>
                       </div>
                     </td>
 
-                    <td class="mono">
+                    <td>
                       {% if f.size and f.size >= (1024*1024) %}
                         {{ (f.size / (1024*1024))|round(2) }} MB
                       {% else %}
@@ -135,16 +109,11 @@
                       {% endif %}
                     </td>
 
-                    <td>
-                      <div class="uploader">
-                        <span class="uploader-dot" aria-hidden="true"></span>
-                        <span class="uploader-name">{{ f.username }}</span>
-                      </div>
-                    </td>
+                    <td>{{ f.username }}</td>
 
                     <td>
                       <div class="actions">
-                        <a class="btn-link" href="{{ url_for('download', file_id=f.id) }}" target="_blank" rel="noopener">
+                        <a class="btn-soft" href="{{ url_for('download', file_id=f.id) }}" target="_blank" rel="noopener">
                           View / Download
                         </a>
 
@@ -162,16 +131,14 @@
             </table>
           </div>
 
-          <div id="emptySearch" class="emptystate" style="display:none;">
-            <div class="emptystate-icon" aria-hidden="true">🗂️</div>
-            <div class="emptystate-title">No matching files</div>
-            <div class="emptystate-sub">Try a different search term.</div>
+          <div id="emptySearch" class="alert" style="display:none; margin-top:12px;">
+            <strong>No matching files</strong>
+            Try a different search term.
           </div>
         {% else %}
-          <div class="emptystate">
-            <div class="emptystate-icon" aria-hidden="true">🗂️</div>
-            <div class="emptystate-title">No files uploaded yet</div>
-            <div class="emptystate-sub">When admin uploads materials, they’ll appear here for students to download.</div>
+          <div class="alert">
+            <strong>No files uploaded yet</strong>
+            When admin uploads materials, they will show here.
           </div>
         {% endif %}
       </section>
@@ -183,14 +150,14 @@
   </main>
 
   <script>
-    // Client-side search (no backend changes)
-    (function () {
+    (function(){
       const input = document.getElementById("searchInput");
       const table = document.getElementById("filesTable");
       const empty = document.getElementById("emptySearch");
       if (!input || !table) return;
 
       const rows = Array.from(table.querySelectorAll("tbody tr"));
+
       input.addEventListener("input", () => {
         const q = input.value.trim().toLowerCase();
         let visible = 0;
