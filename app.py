@@ -12,18 +12,21 @@ from email.message import EmailMessage
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
-# Optional: Cloudinary (external storage)
-# If you installed cloudinary in requirements.txt, this will work.
-# If not installed, uploads will fall back to local folder (Render disk - not permanent).
+# -----------------------------
+# OPTIONAL: Cloudinary
+# -----------------------------
 CLOUDINARY_ENABLED = False
 try:
     import cloudinary
     import cloudinary.uploader
-    import cloudinary.api
     CLOUDINARY_ENABLED = True
 except Exception:
     CLOUDINARY_ENABLED = False
 
+
+# -----------------------------
+# APP CONFIG
+# -----------------------------
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change_this_to_any_random_string")
 
@@ -56,17 +59,21 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
 
-# Cloudinary config via env var:
+
+# Configure Cloudinary via env var:
 # CLOUDINARY_URL=cloudinary://API_KEY:API_SECRET@CLOUD_NAME
 if CLOUDINARY_ENABLED:
     cloudinary_url = os.environ.get("CLOUDINARY_URL", "").strip()
     if cloudinary_url:
         try:
             cloudinary.config(cloudinary_url=cloudinary_url)
-        except Exception:
-            pass
+        except Exception as e:
+            print("Cloudinary config error:", e)
 
 
+# -----------------------------
+# DB HELPERS
+# -----------------------------
 def db():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
@@ -104,7 +111,7 @@ def init_db():
             )
         """)
 
-        # files table now supports either local file or cloud url
+        # Files table includes cloud fields
         cur.execute("""
             CREATE TABLE IF NOT EXISTS files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,16 +125,15 @@ def init_db():
             )
         """)
 
-        # Add new columns if your table existed already (safe migrations)
-        # SQLite doesn't support IF NOT EXISTS in ALTER COLUMN, so we try and ignore.
+        # ✅ SAFE MIGRATION: if old table exists, add missing columns
         try:
-            cur.execute("ALTER TABLE files ADD COLUMN url TEXT")
-        except Exception:
-            pass
-        try:
-            cur.execute("ALTER TABLE files ADD COLUMN storage TEXT NOT NULL DEFAULT 'local'")
-        except Exception:
-            pass
+            cols = [r[1] for r in cur.execute("PRAGMA table_info(files)").fetchall()]
+            if "url" not in cols:
+                cur.execute("ALTER TABLE files ADD COLUMN url TEXT")
+            if "storage" not in cols:
+                cur.execute("ALTER TABLE files ADD COLUMN storage TEXT NOT NULL DEFAULT 'local'")
+        except Exception as e:
+            print("DB migration error:", e)
 
         # Create admin user if missing
         cur.execute("SELECT id FROM users WHERE username=?", (ADMIN_USERNAME,))
@@ -140,6 +146,9 @@ def init_db():
         conn.commit()
 
 
+# -----------------------------
+# AUTH + USERS
+# -----------------------------
 def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -204,6 +213,9 @@ def set_user_password(user_id: int, new_password: str):
         conn.commit()
 
 
+# -----------------------------
+# EMAIL RESET
+# -----------------------------
 def send_reset_email(to_email: str, reset_link: str):
     if not MAIL_USERNAME or not MAIL_APP_PASSWORD or not MAIL_FROM:
         raise RuntimeError("Email not configured.")
@@ -257,6 +269,49 @@ def mark_reset_used(reset_id: int):
         conn.commit()
 
 
+# -----------------------------
+# CLOUDINARY UPLOAD
+# -----------------------------
+def save_file_to_cloudinary(file_storage, stored_name: str):
+    """
+    Upload to Cloudinary if CLOUDINARY_URL is set.
+    Returns (url, bytes) or (None, None).
+    NEVER crashes the app.
+    """
+    if not CLOUDINARY_ENABLED:
+        return None, None
+
+    cloud_url = os.environ.get("CLOUDINARY_URL", "").strip()
+    if not cloud_url:
+        return None, None
+
+    try:
+        filename = file_storage.filename or ""
+        ext = filename.rsplit(".", 1)[1].lower() if "." in filename else ""
+
+        # Use raw for PDFs/docs/zip
+        resource_type = "raw" if ext in [
+            "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "zip", "rar", "txt"
+        ] else "image"
+
+        result = cloudinary.uploader.upload(
+            file_storage,
+            public_id=f"uploads/{stored_name.rsplit('.', 1)[0]}",
+            resource_type=resource_type,
+            overwrite=True
+        )
+
+        url = result.get("secure_url") or result.get("url")
+        size = result.get("bytes")
+        return url, size
+    except Exception as e:
+        print("Cloudinary upload error:", e)
+        return None, None
+
+
+# -----------------------------
+# ROUTES
+# -----------------------------
 @app.route("/")
 def home():
     return redirect(url_for("login"))
@@ -366,39 +421,13 @@ def files():
         return redir
 
     with db() as conn:
-        # ✅ ASCENDING ORDER (A → Z) BY FILE NAME
+        # ✅ ASCENDING ORDER: A → Z by filename
         rows = conn.execute("""
             SELECT * FROM files
             ORDER BY LOWER(original_name) ASC
         """).fetchall()
 
     return render_template("files.html", files=rows)
-
-
-def save_file_to_cloudinary(file_storage, stored_name: str):
-    """
-    Uploads to Cloudinary if configured.
-    Returns: (url, bytes_size)
-    """
-    if not CLOUDINARY_ENABLED or not os.environ.get("CLOUDINARY_URL"):
-        return None, None
-
-    # Use "raw" for PDFs/docs/zip so Cloudinary stores them correctly
-    filename = file_storage.filename or ""
-    ext = filename.rsplit(".", 1)[1].lower() if "." in filename else ""
-    resource_type = "raw" if ext in ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "zip", "rar", "txt"] else "image"
-
-    result = cloudinary.uploader.upload(
-        file_storage,
-        public_id=f"uploads/{stored_name.rsplit('.', 1)[0]}",
-        resource_type=resource_type,
-        overwrite=True
-    )
-
-    url = result.get("secure_url") or result.get("url")
-    # bytes may be present as "bytes"
-    size = result.get("bytes")
-    return url, size
 
 
 @app.route("/upload", methods=["POST"])
@@ -426,31 +455,40 @@ def upload():
     original = secure_filename(f.filename)
     ext = original.rsplit(".", 1)[1].lower()
     stored = f"admin_{int(time.time())}_{os.urandom(6).hex()}.{ext}"
-
     now = int(time.time())
 
-    # Try Cloudinary first (if configured)
+    # Try Cloudinary first
     url, cloud_size = save_file_to_cloudinary(f, stored)
 
     if url:
         size = int(cloud_size or 0)
         storage = "cloudinary"
-        stored_name = stored  # keep name reference
-        # No local save if cloud succeeded
-    else:
-        # Local save fallback (NOT permanent on Render free plan)
-        save_path = os.path.join(app.config["UPLOAD_FOLDER"], stored)
-        f.save(save_path)
-        size = os.path.getsize(save_path)
-        storage = "local"
         stored_name = stored
+    else:
+        # Fallback local (NOT permanent on Render free plan)
+        try:
+            save_path = os.path.join(app.config["UPLOAD_FOLDER"], stored)
+            f.save(save_path)
+            size = os.path.getsize(save_path)
+            storage = "local"
+            stored_name = stored
+        except Exception as e:
+            print("Local save error:", e)
+            flash("Upload failed on server. Check Render logs.", "error")
+            return redirect(url_for("files"))
 
-    with db() as conn:
-        conn.execute("""
-            INSERT INTO files (username, original_name, stored_name, size, uploaded_at, url, storage)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (session["username"], original, stored_name, size, now, url, storage))
-        conn.commit()
+    # Insert into DB
+    try:
+        with db() as conn:
+            conn.execute("""
+                INSERT INTO files (username, original_name, stored_name, size, uploaded_at, url, storage)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (session["username"], original, stored_name, size, now, url, storage))
+            conn.commit()
+    except Exception as e:
+        print("DB insert error:", e)
+        flash("Upload failed in database. Check Render logs.", "error")
+        return redirect(url_for("files"))
 
     flash("Uploaded successfully ✅", "success")
     return redirect(url_for("files"))
@@ -468,11 +506,14 @@ def download(file_id):
     if not row:
         abort(404)
 
-    # If stored on Cloudinary, redirect to the cloud URL
-    if row.get("storage") == "cloudinary" and row.get("url"):
-        return redirect(row["url"])
+    # sqlite3.Row has no .get(), so check keys safely
+    cols = row.keys()
+    storage = row["storage"] if "storage" in cols else "local"
+    url = row["url"] if "url" in cols else None
 
-    # Otherwise serve local file
+    if storage == "cloudinary" and url:
+        return redirect(url)
+
     return send_from_directory(
         app.config["UPLOAD_FOLDER"],
         row["stored_name"],
@@ -494,11 +535,15 @@ def delete(file_id):
         row = conn.execute("SELECT * FROM files WHERE id=?", (file_id,)).fetchone()
         if not row:
             abort(404)
+
+        cols = row.keys()
+        storage = row["storage"] if "storage" in cols else "local"
+
         conn.execute("DELETE FROM files WHERE id=?", (file_id,))
         conn.commit()
 
-    # Delete local file if it exists
-    if row.get("storage") != "cloudinary":
+    # Only delete local file from disk
+    if storage != "cloudinary":
         path = os.path.join(app.config["UPLOAD_FOLDER"], row["stored_name"])
         if os.path.exists(path):
             os.remove(path)
@@ -507,7 +552,7 @@ def delete(file_id):
     return redirect(url_for("files"))
 
 
-# ---- Admin panel routes ----
+# ---- Admin panel helpers + routes ----
 def get_all_users():
     with db() as conn:
         return conn.execute(
@@ -632,6 +677,5 @@ def reset_password(token):
 # Render needs this on import
 init_db()
 
-# Local run
 if __name__ == "__main__":
     app.run(debug=True)
