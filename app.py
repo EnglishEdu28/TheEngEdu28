@@ -28,7 +28,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is missing. Set DATABASE_URL in Render env vars.")
 
-# Ensure sslmode=require
+# Ensure sslmode=require for Supabase
 if "sslmode=" not in DATABASE_URL:
     DATABASE_URL += "&sslmode=require" if "?" in DATABASE_URL else "?sslmode=require"
 
@@ -37,7 +37,6 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 MAX_ATTEMPTS = 3
 LOCK_SECONDS = 5 * 60
-
 RESET_TOKEN_EXPIRE_SECONDS = 15 * 60
 
 MAIL_HOST = os.environ.get("MAIL_HOST", "smtp.gmail.com")
@@ -62,7 +61,7 @@ cloudinary.config(cloudinary_url=CLOUDINARY_URL)
 
 
 # =============================
-# DB (Supabase Postgres via psycopg v3)
+# DB
 # =============================
 def db_conn():
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
@@ -109,14 +108,13 @@ def init_db():
                 );
             """)
 
-            # Ensure admin exists
+            # Ensure admin exists in DB
             cur.execute("SELECT id FROM users WHERE username=%s", (ADMIN_USERNAME,))
             if not cur.fetchone():
                 cur.execute("""
                     INSERT INTO users (username, email, password_hash, attempts_left, lock_until)
                     VALUES (%s, %s, %s, %s, %s)
                 """, (ADMIN_USERNAME, "", generate_password_hash(ADMIN_PASSWORD), MAX_ATTEMPTS, 0))
-
         conn.commit()
 
 
@@ -131,6 +129,11 @@ def require_login():
     if "user_id" not in session:
         return redirect(url_for("login"))
     return None
+
+
+def require_admin():
+    if not session.get("is_admin"):
+        abort(403)
 
 
 def get_user(username: str):
@@ -253,6 +256,7 @@ def upload_to_cloudinary(file_storage, public_id_base: str):
     filename = file_storage.filename or ""
     ext = filename.rsplit(".", 1)[1].lower() if "." in filename else ""
 
+    # PDFs/docs must be raw
     resource_type = "raw" if ext in [
         "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "zip", "rar", "txt"
     ] else "image"
@@ -270,7 +274,7 @@ def upload_to_cloudinary(file_storage, public_id_base: str):
 
 
 # =============================
-# ROUTES
+# ROUTES: AUTH
 # =============================
 @app.route("/")
 def home():
@@ -345,7 +349,7 @@ def dashboard():
     redir = require_login()
     if redir:
         return redir
-    return render_template("dashboard.html", username=session.get("username"))
+    return render_template("dashboard.html", username=session.get("username"), is_admin=session.get("is_admin", False))
 
 
 @app.route("/profile")
@@ -366,6 +370,7 @@ def profile():
     return render_template(
         "profile.html",
         username=user["username"],
+        email=user.get("email", ""),
         attempts_left=user["attempts_left"],
         locked=locked,
         remaining=remaining,
@@ -373,6 +378,9 @@ def profile():
     )
 
 
+# =============================
+# ROUTES: FILES
+# =============================
 @app.route("/files")
 def files():
     redir = require_login()
@@ -384,7 +392,7 @@ def files():
             cur.execute("SELECT * FROM files ORDER BY LOWER(original_name) ASC;")
             rows = cur.fetchall()
 
-    return render_template("files.html", files=rows)
+    return render_template("files.html", files=rows, is_admin=session.get("is_admin", False))
 
 
 @app.route("/upload", methods=["POST"])
@@ -392,7 +400,6 @@ def upload():
     redir = require_login()
     if redir:
         return redir
-
     if not session.get("is_admin"):
         abort(403)
 
@@ -432,6 +439,27 @@ def upload():
     return redirect(url_for("files"))
 
 
+@app.route("/file/<int:file_id>")
+def file_view(file_id):
+    redir = require_login()
+    if redir:
+        return redir
+
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM files WHERE id=%s", (file_id,))
+            row = cur.fetchone()
+
+    if not row:
+        abort(404)
+
+    name = row["original_name"]
+    ext = name.rsplit(".", 1)[1].lower() if "." in name else ""
+    is_pdf = (ext == "pdf")
+
+    return render_template("file_view.html", f=row, is_pdf=is_pdf, is_admin=session.get("is_admin", False))
+
+
 @app.route("/download/<int:file_id>")
 def download(file_id):
     redir = require_login()
@@ -446,17 +474,100 @@ def download(file_id):
     if not row:
         abort(404)
 
+    # Always redirect to Cloudinary URL
     return redirect(row["url"])
 
 
-# -------- Forgot / Reset routes (fixes your login.html error) --------
+@app.route("/delete/<int:file_id>", methods=["POST"])
+def delete(file_id):
+    redir = require_login()
+    if redir:
+        return redir
+    if not session.get("is_admin"):
+        abort(403)
+
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM files WHERE id=%s", (file_id,))
+        conn.commit()
+
+    flash("Deleted ✅", "success")
+    return redirect(url_for("files"))
+
+
+# =============================
+# ROUTES: ADMIN PANEL (simple)
+# =============================
+def get_all_users():
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, username, email, attempts_left, lock_until FROM users ORDER BY id DESC;")
+            return cur.fetchall()
+
+
+@app.route("/admin")
+def admin_panel():
+    redir = require_login()
+    if redir:
+        return redir
+    require_admin()
+
+    users = get_all_users()
+    now = int(time.time())
+
+    # Add remaining lock seconds
+    users_view = []
+    for u in users:
+        lock_until = int(u["lock_until"] or 0)
+        remaining = (lock_until - now) if lock_until > now else 0
+        users_view.append({**u, "remaining": remaining})
+
+    return render_template("admin.html", users=users_view, admin_username=session.get("username"))
+
+
+@app.route("/admin/reset/<int:user_id>", methods=["POST"])
+def admin_reset_user(user_id):
+    redir = require_login()
+    if redir:
+        return redir
+    require_admin()
+
+    reset_user_security(user_id)
+    flash("User lock reset ✅", "success")
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/delete/<int:user_id>", methods=["POST"])
+def admin_delete_user(user_id):
+    redir = require_login()
+    if redir:
+        return redir
+    require_admin()
+
+    # block deleting admin user
+    u = get_user_by_id(user_id)
+    if u and u["username"].lower() == ADMIN_USERNAME.lower():
+        flash("You can't delete the admin account.", "error")
+        return redirect(url_for("admin_panel"))
+
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+        conn.commit()
+
+    flash("User deleted ✅", "success")
+    return redirect(url_for("admin_panel"))
+
+
+# =============================
+# ROUTES: FORGOT/RESET (keeps login.html working)
+# =============================
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot_password():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         user = get_user(username)
 
-        # Always return same message (avoid account enumeration)
         if user and user.get("email"):
             try:
                 token = create_password_reset(user["id"])
@@ -491,6 +602,24 @@ def reset_password(token):
         return render_template("reset.html", success=True)
 
     return render_template("reset.html", invalid=False)
+
+
+# =============================
+# BASIC ERROR PAGES (no more blank 500)
+# =============================
+@app.errorhandler(403)
+def forbidden(e):
+    return render_template("error.html", code=403, message="Forbidden"), 403
+
+
+@app.errorhandler(404)
+def not_found(e):
+    return render_template("error.html", code=404, message="Not Found"), 404
+
+
+@app.errorhandler(500)
+def server_error(e):
+    return render_template("error.html", code=500, message="Internal Server Error"), 500
 
 
 # =============================
