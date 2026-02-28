@@ -1,74 +1,85 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Admin Panel</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin • University Portal</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <style>
-    /* quick table styling (keeps your main CSS unchanged) */
-    table { width: 100%; border-collapse: collapse; margin-top: 14px; }
-    th, td { padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.15); text-align: left; }
-    .small { font-size: 0.9em; opacity: 0.9; }
-    .btn { width: auto; padding: 8px 10px; margin: 0; }
-    .danger { background: #dc2626; }
-    .danger:hover { background: #b91c1c; }
-  </style>
 </head>
 <body>
+  <main class="page">
+    <section class="auth-card" style="max-width: 980px;">
+      <header class="auth-header">
+        <div class="logo-badge">🛡️</div>
+        <h1>Admin Panel</h1>
+        <p>Manage users • Reset locks • Remove accounts</p>
+      </header>
 
-<div class="card" style="width: 720px; max-width: 92vw; text-align:left;">
-  <div style="display:flex; justify-content:space-between; align-items:center;">
-    <div>
-      <h2 style="margin:0;">Admin Panel 🛠️</h2>
-      <div class="small">Logged in as: <b>{{ admin }}</b></div>
-    </div>
-    <div>
-      <a href="{{ url_for('admin_logout') }}">Logout</a>
-    </div>
-  </div>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for cat, msg in messages %}
+            <div class="alert {% if cat == 'error' %}alert-error{% endif %}">{{ msg }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
 
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Username</th>
-        <th>Attempts Left</th>
-        <th>Lock Status</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
+      <div class="row" style="margin-bottom:12px;">
+        <span class="tiny">Signed in as: <b>{{ admin_username }}</b></span>
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <a class="link" href="{{ url_for('files') }}">Course Files</a>
+          <a class="link" href="{{ url_for('dashboard') }}">Dashboard</a>
+          <a class="link" href="{{ url_for('logout') }}">Logout</a>
+        </div>
+      </div>
 
-    <tbody>
-      {% for u in users %}
-      <tr>
-        <td>{{ u.id }}</td>
-        <td>{{ u.username }}</td>
-        <td>{{ u.attempts_left }}</td>
-        <td>
-          {% if u.remaining > 0 %}
-            Locked ({{ u.remaining }}s)
-          {% else %}
-            Not locked
-          {% endif %}
-        </td>
-        <td style="display:flex; gap:8px; flex-wrap:wrap;">
-          <form method="POST" action="{{ url_for('admin_reset_user', user_id=u.id) }}">
-            <button class="btn" type="submit">Reset lock</button>
-          </form>
+      <div style="overflow:auto;">
+        <table style="width:100%; border-collapse: collapse;">
+          <thead>
+            <tr style="text-align:left; color: rgba(234,240,255,0.75); font-size: 0.9rem;">
+              <th style="padding:10px;">Username</th>
+              <th style="padding:10px;">Email</th>
+              <th style="padding:10px;">Attempts</th>
+              <th style="padding:10px;">Lock</th>
+              <th style="padding:10px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+              <tr style="border-top: 1px solid rgba(255,255,255,0.08);">
+                <td style="padding:10px;">{{ u.username }}</td>
+                <td style="padding:10px;">{{ u.email or "-" }}</td>
+                <td style="padding:10px;">{{ u.attempts_left }}</td>
+                <td style="padding:10px;">
+                  {% if u.remaining and u.remaining > 0 %}
+                    Locked ({{ u.remaining }}s)
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+                <td style="padding:10px; display:flex; gap:10px; flex-wrap:wrap;">
+                  <form method="POST" action="{{ url_for('admin_reset_user', user_id=u.id) }}">
+                    <button class="icon-btn" type="submit">🔓 Reset</button>
+                  </form>
 
-          <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}"
-                onsubmit="return confirm('Delete user {{ u.username }}?');">
-            <button class="btn danger" type="submit">Delete</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+                  <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}"
+                        onsubmit="return confirm('Delete this user?');">
+                    <button class="icon-btn" type="submit">🗑️ Delete</button>
+                  </form>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td style="padding:10px;" colspan="5">No users found.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-  <p class="small" style="margin-top:12px;">
-    Admin URL: <b>/admin</b> • Admin login: <b>/admin/login</b>
-  </p>
-</div>
-
+    <div class="bg-orb orb-1" aria-hidden="true"></div>
+    <div class="bg-orb orb-2" aria-hidden="true"></div>
+    <div class="bg-grid" aria-hidden="true"></div>
+  </main>
 </body>
 </html>
