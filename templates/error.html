@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Error</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="page">
+    <section class="auth-card">
+      <header class="auth-header">
+        <div class="logo-badge">⚠️</div>
+        <h1>Error {{ code }}</h1>
+        <p>{{ message }}</p>
+      </header>
+
+      <div class="row" style="margin-top:14px;">
+        <a class="link" href="{{ url_for('login') }}">Go to Login</a>
+        <a class="link" href="{{ url_for('dashboard') }}">Dashboard</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
