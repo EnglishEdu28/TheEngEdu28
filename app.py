@@ -22,17 +22,28 @@ from psycopg.rows import dict_row
 # CONFIG
 # =============================
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "change_this_to_any_random_string")
+
+# ---- IMPORTANT: stable secret key ----
+app.secret_key = os.environ.get("SECRET_KEY", "")
+if not app.secret_key:
+    raise RuntimeError("SECRET_KEY is missing in environment variables.")
+
+# ---- IMPORTANT: Render proxy/session stability ----
+# Render uses HTTPS in front of your service; this makes Flask treat requests as secure.
+app.config["PREFERRED_URL_SCHEME"] = "https"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = True  # must be True on Render (HTTPS)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is missing. Set DATABASE_URL in Render env vars.")
 
-# Ensure sslmode=require for Supabase
+# Ensure sslmode=require
 if "sslmode=" not in DATABASE_URL:
     DATABASE_URL += "&sslmode=require" if "?" in DATABASE_URL else "?sslmode=require"
 
-ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_USERNAME = (os.environ.get("ADMIN_USERNAME", "admin") or "admin").strip()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 MAX_ATTEMPTS = 3
@@ -109,7 +120,7 @@ def init_db():
             """)
 
             # Ensure admin exists in DB
-            cur.execute("SELECT id FROM users WHERE username=%s", (ADMIN_USERNAME,))
+            cur.execute("SELECT id FROM users WHERE LOWER(username)=LOWER(%s)", (ADMIN_USERNAME,))
             if not cur.fetchone():
                 cur.execute("""
                     INSERT INTO users (username, email, password_hash, attempts_left, lock_until)
@@ -125,21 +136,27 @@ def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def is_logged_in() -> bool:
+    return "user_id" in session and "username" in session
+
+
 def require_login():
-    if "user_id" not in session:
+    if not is_logged_in():
+        print("403 require_login: session missing", dict(session))
         return redirect(url_for("login"))
     return None
 
 
 def require_admin():
     if not session.get("is_admin"):
+        print("403 require_admin: not admin", dict(session))
         abort(403)
 
 
 def get_user(username: str):
     with db_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM users WHERE username=%s", (username,))
+            cur.execute("SELECT * FROM users WHERE LOWER(username)=LOWER(%s)", (username.strip(),))
             return cur.fetchone()
 
 
@@ -148,6 +165,20 @@ def get_user_by_id(user_id: int):
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM users WHERE id=%s", (user_id,))
             return cur.fetchone()
+
+
+def update_attempts_and_lock(user_id: int, attempts_left: int, lock_until: int):
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET attempts_left=%s, lock_until=%s WHERE id=%s",
+                (attempts_left, lock_until, user_id)
+            )
+        conn.commit()
+
+
+def reset_user_security(user_id: int):
+    update_attempts_and_lock(user_id, MAX_ATTEMPTS, 0)
 
 
 def create_user(username: str, email: str, password: str) -> bool:
@@ -165,90 +196,6 @@ def create_user(username: str, email: str, password: str) -> bool:
         return False
 
 
-def update_attempts_and_lock(user_id: int, attempts_left: int, lock_until: int):
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE users SET attempts_left=%s, lock_until=%s WHERE id=%s",
-                (attempts_left, lock_until, user_id)
-            )
-        conn.commit()
-
-
-def reset_user_security(user_id: int):
-    update_attempts_and_lock(user_id, MAX_ATTEMPTS, 0)
-
-
-def set_user_password(user_id: int, new_password: str):
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE users SET password_hash=%s WHERE id=%s",
-                (generate_password_hash(new_password), user_id)
-            )
-        conn.commit()
-
-
-# =============================
-# PASSWORD RESET
-# =============================
-def send_reset_email(to_email: str, reset_link: str):
-    if not MAIL_USERNAME or not MAIL_APP_PASSWORD or not MAIL_FROM:
-        raise RuntimeError("Email not configured.")
-
-    msg = EmailMessage()
-    msg["Subject"] = "Password Reset Link"
-    msg["From"] = MAIL_FROM
-    msg["To"] = to_email
-    msg.set_content(
-        "You requested a password reset.\n\n"
-        f"Reset your password (expires in 15 minutes):\n{reset_link}\n\n"
-        "If you did not request this, ignore this email."
-    )
-
-    with smtplib.SMTP_SSL(MAIL_HOST, MAIL_PORT) as smtp:
-        smtp.login(MAIL_USERNAME, MAIL_APP_PASSWORD)
-        smtp.send_message(msg)
-
-
-def create_password_reset(user_id: int) -> str:
-    raw_token = secrets.token_urlsafe(32)
-    token_hash = sha256_hex(raw_token)
-    now = int(time.time())
-    expires_at = now + RESET_TOKEN_EXPIRE_SECONDS
-
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE password_resets SET used=TRUE WHERE user_id=%s", (user_id,))
-            cur.execute("""
-                INSERT INTO password_resets (user_id, token_hash, expires_at, used, created_at)
-                VALUES (%s, %s, %s, FALSE, %s)
-            """, (user_id, token_hash, expires_at, now))
-        conn.commit()
-
-    return raw_token
-
-
-def find_valid_reset(token: str):
-    token_hash = sha256_hex(token)
-    now = int(time.time())
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT * FROM password_resets
-                WHERE token_hash=%s AND used=FALSE AND expires_at>%s
-                ORDER BY id DESC LIMIT 1
-            """, (token_hash, now))
-            return cur.fetchone()
-
-
-def mark_reset_used(reset_id: int):
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE password_resets SET used=TRUE WHERE id=%s", (reset_id,))
-        conn.commit()
-
-
 # =============================
 # CLOUDINARY UPLOAD
 # =============================
@@ -256,7 +203,6 @@ def upload_to_cloudinary(file_storage, public_id_base: str):
     filename = file_storage.filename or ""
     ext = filename.rsplit(".", 1)[1].lower() if "." in filename else ""
 
-    # PDFs/docs must be raw
     resource_type = "raw" if ext in [
         "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "zip", "rar", "txt"
     ] else "image"
@@ -274,11 +220,23 @@ def upload_to_cloudinary(file_storage, public_id_base: str):
 
 
 # =============================
-# ROUTES: AUTH
+# ROUTES
 # =============================
 @app.route("/")
 def home():
     return redirect(url_for("login"))
+
+
+@app.route("/whoami")
+def whoami():
+    # Debug page to prove what the server sees
+    return {
+        "logged_in": is_logged_in(),
+        "user_id": session.get("user_id"),
+        "username": session.get("username"),
+        "is_admin": session.get("is_admin"),
+        "admin_env": ADMIN_USERNAME,
+    }
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -322,9 +280,15 @@ def login():
 
         if check_password_hash(user["password_hash"], password):
             reset_user_security(user["id"])
+
+            session.clear()
             session["user_id"] = user["id"]
             session["username"] = user["username"]
-            session["is_admin"] = (user["username"].lower() == ADMIN_USERNAME.lower())
+
+            # robust admin check
+            session["is_admin"] = (user["username"].strip().lower() == ADMIN_USERNAME.strip().lower())
+
+            print("LOGIN OK:", {"username": session["username"], "is_admin": session["is_admin"]})
             return redirect(url_for("dashboard"))
 
         attempts_left = int(user["attempts_left"]) - 1
@@ -378,9 +342,6 @@ def profile():
     )
 
 
-# =============================
-# ROUTES: FILES
-# =============================
 @app.route("/files")
 def files():
     redir = require_login()
@@ -400,8 +361,7 @@ def upload():
     redir = require_login()
     if redir:
         return redir
-    if not session.get("is_admin"):
-        abort(403)
+    require_admin()
 
     if "file" not in request.files:
         flash("No file selected", "error")
@@ -474,7 +434,6 @@ def download(file_id):
     if not row:
         abort(404)
 
-    # Always redirect to Cloudinary URL
     return redirect(row["url"])
 
 
@@ -483,8 +442,7 @@ def delete(file_id):
     redir = require_login()
     if redir:
         return redir
-    if not session.get("is_admin"):
-        abort(403)
+    require_admin()
 
     with db_conn() as conn:
         with conn.cursor() as cur:
@@ -496,116 +454,7 @@ def delete(file_id):
 
 
 # =============================
-# ROUTES: ADMIN PANEL (simple)
-# =============================
-def get_all_users():
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, username, email, attempts_left, lock_until FROM users ORDER BY id DESC;")
-            return cur.fetchall()
-
-
-@app.route("/admin")
-def admin_panel():
-    redir = require_login()
-    if redir:
-        return redir
-    require_admin()
-
-    users = get_all_users()
-    now = int(time.time())
-
-    # Add remaining lock seconds
-    users_view = []
-    for u in users:
-        lock_until = int(u["lock_until"] or 0)
-        remaining = (lock_until - now) if lock_until > now else 0
-        users_view.append({**u, "remaining": remaining})
-
-    return render_template("admin.html", users=users_view, admin_username=session.get("username"))
-
-
-@app.route("/admin/reset/<int:user_id>", methods=["POST"])
-def admin_reset_user(user_id):
-    redir = require_login()
-    if redir:
-        return redir
-    require_admin()
-
-    reset_user_security(user_id)
-    flash("User lock reset ✅", "success")
-    return redirect(url_for("admin_panel"))
-
-
-@app.route("/admin/delete/<int:user_id>", methods=["POST"])
-def admin_delete_user(user_id):
-    redir = require_login()
-    if redir:
-        return redir
-    require_admin()
-
-    # block deleting admin user
-    u = get_user_by_id(user_id)
-    if u and u["username"].lower() == ADMIN_USERNAME.lower():
-        flash("You can't delete the admin account.", "error")
-        return redirect(url_for("admin_panel"))
-
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
-        conn.commit()
-
-    flash("User deleted ✅", "success")
-    return redirect(url_for("admin_panel"))
-
-
-# =============================
-# ROUTES: FORGOT/RESET (keeps login.html working)
-# =============================
-@app.route("/forgot", methods=["GET", "POST"])
-def forgot_password():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        user = get_user(username)
-
-        if user and user.get("email"):
-            try:
-                token = create_password_reset(user["id"])
-                reset_link = url_for("reset_password", token=token, _external=True)
-                send_reset_email(user["email"], reset_link)
-            except Exception as e:
-                print("send reset error:", e)
-
-        return render_template("forgot.html", info="If that account exists, a reset link has been sent.")
-
-    return render_template("forgot.html")
-
-
-@app.route("/reset/<token>", methods=["GET", "POST"])
-def reset_password(token):
-    reset_row = find_valid_reset(token)
-    if not reset_row:
-        return render_template("reset.html", invalid=True)
-
-    if request.method == "POST":
-        password = request.form.get("password", "")
-        confirm = request.form.get("confirm", "")
-
-        if len(password) < 4:
-            return render_template("reset.html", invalid=False, error="Password must be at least 4 characters.")
-        if password != confirm:
-            return render_template("reset.html", invalid=False, error="Passwords do not match.")
-
-        set_user_password(reset_row["user_id"], password)
-        reset_user_security(reset_row["user_id"])
-        mark_reset_used(reset_row["id"])
-        return render_template("reset.html", success=True)
-
-    return render_template("reset.html", invalid=False)
-
-
-# =============================
-# BASIC ERROR PAGES (no more blank 500)
+# ERROR PAGES
 # =============================
 @app.errorhandler(403)
 def forbidden(e):
