@@ -3,175 +3,95 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Course Materials • University Portal</title>
+  <title>Course Files • University Portal</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <main class="page">
-    <section class="shell" style="max-width: 1020px;">
-      <header class="topbar">
-        <div class="topbar-left">
-          <div class="appmark" aria-hidden="true">📚</div>
-          <div>
-            <div class="topbar-title">Course Materials</div>
-            <div class="topbar-sub">Students download • Admin uploads</div>
-          </div>
-        </div>
-
-        <div class="topbar-right">
-          <a class="chip" href="{{ url_for('dashboard') }}">← Dashboard</a>
-          <a class="chip chip-danger" href="{{ url_for('logout') }}">Logout</a>
-        </div>
+    <section class="auth-card" style="max-width: 980px;">
+      <header class="auth-header">
+        <div class="logo-badge">📚</div>
+        <h1>Course Materials</h1>
+        <p>View • Download • Admin upload</p>
       </header>
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-          <div style="display:grid; gap:10px; margin-bottom:12px;">
-            {% for cat, msg in messages %}
-              <div class="alert {% if cat == 'error' %}alert-error{% endif %}">{{ msg }}</div>
-            {% endfor %}
-          </div>
+          {% for cat, msg in messages %}
+            <div class="alert {% if cat == 'error' %}alert-error{% endif %}">{{ msg }}</div>
+          {% endfor %}
         {% endif %}
       {% endwith %}
 
-      <section class="card">
-        {% if session.get("is_admin") %}
-          <div class="alert" style="margin-bottom:12px;">
-            <strong>Admin upload</strong>
-            <span>Upload materials for students. Files are stored externally so they won’t vanish.</span>
-          </div>
-
-          <form class="form" method="POST" action="{{ url_for('upload') }}" enctype="multipart/form-data">
-            <div class="field">
-              <label>Select file</label>
-              <input class="input" type="file" name="file" required />
-              <div class="hint">Allowed: pdf, docx, pptx, xlsx, images, zip… (max 20MB)</div>
+      {% if is_admin %}
+        <form class="auth-form" method="POST" action="{{ url_for('upload') }}" enctype="multipart/form-data">
+          <div class="field">
+            <label>Upload (Admin only)</label>
+            <div class="input-wrap" style="grid-template-columns: 1fr;">
+              <input type="file" name="file" required />
             </div>
-            <button class="btn-primary" type="submit">Upload →</button>
-          </form>
-
-          <hr class="rule" />
-        {% else %}
-          <div class="alert" style="margin-bottom:12px;">
-            <strong>Students</strong>
-            <span>You can only download files. Only admin uploads materials.</span>
+            <p class="hint">Allowed: pdf, docx, pptx, xlsx, images, zip… (max 20MB)</p>
           </div>
-        {% endif %}
+          <button class="btn" type="submit">Upload <span class="btn-arrow">→</span></button>
+        </form>
 
-        <div class="toolbar">
-          <div class="badge">Showing {{ files|length }} file{{ '' if files|length == 1 else 's' }}</div>
-          <div class="search">
-            <span aria-hidden="true">🔎</span>
-            <input id="searchInput" class="search-input" type="text" placeholder="Search files (name / uploader)" />
-          </div>
+        <hr style="border:none; border-top:1px solid rgba(255,255,255,0.10); margin:18px 0;">
+      {% else %}
+        <div class="alert" role="status">
+          <strong>Students</strong>
+          <span>You can view and download files. Upload is restricted.</span>
         </div>
+      {% endif %}
 
-        {% if files and files|length > 0 %}
-          <div class="table-wrap">
-            <table class="table" id="filesTable">
-              <thead>
-                <tr>
-                  <th>File</th>
-                  <th>Size</th>
-                  <th>Uploaded by</th>
-                  <th style="width: 220px;">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for f in files %}
-                  {% set ext = (f.original_name.rsplit('.', 1)[1] if '.' in f.original_name else '')|lower %}
-                  <tr class="rowitem">
-                    <td>
-                      <div class="filecell">
-                        <div class="fileicon" aria-hidden="true">
-                          {% if ext == 'pdf' %}PDF
-                          {% elif ext in ['doc','docx'] %}DOC
-                          {% elif ext in ['ppt','pptx'] %}PPT
-                          {% elif ext in ['xls','xlsx'] %}XLS
-                          {% elif ext in ['png','jpg','jpeg','gif'] %}IMG
-                          {% elif ext in ['zip','rar'] %}ZIP
-                          {% else %}FILE{% endif %}
-                        </div>
-                        <div>
-                          <div class="filename">{{ f.original_name }}</div>
-                          <div style="margin-top:4px;">
-                            <span class="badge">{{ ext if ext else 'file' }}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
+      <div style="overflow:auto;">
+        <table style="width:100%; border-collapse: collapse;">
+          <thead>
+            <tr style="text-align:left; color: rgba(234,240,255,0.75); font-size: 0.9rem;">
+              <th style="padding:10px;">File</th>
+              <th style="padding:10px;">Size</th>
+              <th style="padding:10px;">Uploaded by</th>
+              <th style="padding:10px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in files %}
+              <tr style="border-top: 1px solid rgba(255,255,255,0.08);">
+                <td style="padding:10px;">{{ f.original_name }}</td>
+                <td style="padding:10px;">{{ (f.size / 1024)|round(1) }} KB</td>
+                <td style="padding:10px;">{{ f.username }}</td>
+                <td style="padding:10px; display:flex; gap:10px; flex-wrap:wrap;">
+                  <a class="link" href="{{ url_for('file_view', file_id=f.id) }}">View</a>
+                  <a class="link" href="{{ url_for('download', file_id=f.id) }}">Download</a>
 
-                    <td>
-                      {% if f.size and f.size >= (1024*1024) %}
-                        {{ (f.size / (1024*1024))|round(2) }} MB
-                      {% else %}
-                        {{ (f.size / 1024)|round(1) }} KB
-                      {% endif %}
-                    </td>
+                  {% if is_admin %}
+                    <form method="POST" action="{{ url_for('delete', file_id=f.id) }}"
+                          onsubmit="return confirm('Delete this file?');">
+                      <button class="icon-btn" type="submit">🗑️ Delete</button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td style="padding:10px;" colspan="4">No files uploaded yet.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
 
-                    <td>{{ f.username }}</td>
-
-                    <td>
-                      <div class="actions">
-                        <a class="btn-soft" href="{{ url_for('download', file_id=f.id) }}" target="_blank" rel="noopener">
-                          View / Download
-                        </a>
-
-                        {% if session.get("is_admin") %}
-                          <form method="POST" action="{{ url_for('delete', file_id=f.id) }}"
-                                onsubmit="return confirm('Delete this file?');">
-                            <button class="btn-danger" type="submit">Delete</button>
-                          </form>
-                        {% endif %}
-                      </div>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-
-          <div id="emptySearch" class="alert" style="display:none; margin-top:12px;">
-            <strong>No matching files</strong>
-            Try a different search term.
-          </div>
-        {% else %}
-          <div class="alert">
-            <strong>No files uploaded yet</strong>
-            When admin uploads materials, they will show here.
-          </div>
+      <div class="row" style="margin-top:14px;">
+        <a class="link" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+        {% if is_admin %}
+          <a class="link" href="{{ url_for('admin_panel') }}">Admin Panel</a>
         {% endif %}
-      </section>
+        <a class="link" href="{{ url_for('logout') }}">Logout</a>
+      </div>
     </section>
 
     <div class="bg-orb orb-1" aria-hidden="true"></div>
     <div class="bg-orb orb-2" aria-hidden="true"></div>
     <div class="bg-grid" aria-hidden="true"></div>
   </main>
-
-  <script>
-    (function(){
-      const input = document.getElementById("searchInput");
-      const table = document.getElementById("filesTable");
-      const empty = document.getElementById("emptySearch");
-      if (!input || !table) return;
-
-      const rows = Array.from(table.querySelectorAll("tbody tr"));
-
-      input.addEventListener("input", () => {
-        const q = input.value.trim().toLowerCase();
-        let visible = 0;
-
-        rows.forEach(r => {
-          const text = r.innerText.toLowerCase();
-          const show = text.includes(q);
-          r.style.display = show ? "" : "none";
-          if (show) visible += 1;
-        });
-
-        if (empty) empty.style.display = (visible === 0) ? "" : "none";
-      });
-    })();
-  </script>
 </body>
 </html>
