@@ -41,7 +41,7 @@
           <div class="input-wrap">
             <div class="input-icon">👤</div>
             <input type="text" name="username" placeholder="Enter username" required />
-            <button class="icon-btn" type="button" disabled> </button>
+            <button class="icon-btn" type="button" disabled></button>
           </div>
         </div>
 
@@ -50,7 +50,7 @@
           <div class="input-wrap">
             <div class="input-icon">🔒</div>
             <input type="password" name="password" placeholder="Enter password" required />
-            <button class="icon-btn" type="button" disabled> </button>
+            <button class="icon-btn" type="button" disabled></button>
           </div>
         </div>
 
@@ -58,18 +58,12 @@
 
         <div class="row">
           <a class="link" href="{{ url_for('register') }}">Create account</a>
-
-          {# IMPORTANT: this prevents crash if route is missing #}
-          {% if 'forgot_password' in current_app.view_functions %}
-            <a class="link" href="{{ url_for('forgot_password') }}">Forgot password?</a>
-          {% else %}
-            <span class="tiny">Forgot password disabled</span>
-          {% endif %}
+          <a class="link" href="{{ url_for('forgot_password') }}">Forgot password?</a>
         </div>
       </form>
 
       <div class="auth-footer">
-        <p class="tiny">© {{ 2026 }} University Portal</p>
+        <p class="tiny">© 2026 University Portal</p>
       </div>
     </section>
 
