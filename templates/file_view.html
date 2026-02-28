@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>View File • University Portal</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="page">
+    <section class="auth-card" style="max-width: 980px;">
+      <header class="auth-header">
+        <div class="logo-badge">📄</div>
+        <h1>File Viewer</h1>
+        <p>{{ f.original_name }}</p>
+      </header>
+
+      <div class="row" style="margin-bottom:12px;">
+        <a class="link" href="{{ url_for('files') }}">← Back to Files</a>
+        <a class="link" href="{{ url_for('download', file_id=f.id) }}">Download</a>
+      </div>
+
+      {% if is_pdf %}
+        <div style="border:1px solid rgba(255,255,255,0.10); border-radius:14px; overflow:hidden;">
+          <iframe
+            src="{{ f.url }}"
+            style="width:100%; height:70vh; border:0; background: rgba(255,255,255,0.03);"
+            title="PDF Viewer">
+          </iframe>
+        </div>
+        <p class="tiny" style="margin-top:10px; opacity:0.8;">
+          If the PDF doesn’t display, click <a class="link" href="{{ f.url }}" target="_blank" rel="noopener">Open in new tab</a>.
+        </p>
+      {% else %}
+        <div class="alert">
+          <strong>Preview not available</strong>
+          <span>This file type can’t be previewed here. Use Download.</span>
+        </div>
+
+        <div class="row">
+          <a class="link" href="{{ f.url }}" target="_blank" rel="noopener">Open in new tab</a>
+          <a class="link" href="{{ url_for('download', file_id=f.id) }}">Download</a>
+        </div>
+      {% endif %}
+    </section>
+
+    <div class="bg-orb orb-1" aria-hidden="true"></div>
+    <div class="bg-orb orb-2" aria-hidden="true"></div>
+    <div class="bg-grid" aria-hidden="true"></div>
+  </main>
+</body>
+</html>
